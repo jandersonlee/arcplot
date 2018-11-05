@@ -1,7 +1,7 @@
 // to avoid global namespace pollution use "ap" or "AP" prefix
-// v0.4: add Sync and AutoMark fixes
+// v0.5: more Sync and AutoMark fixes
 var apPrefix = "AP";
-var APversion = 0.3;
+var APversion = 0.5;
 function apId(id) { return apPrefix+id; }
 function byId(id) { return document.getElementById(id); }
 function apById(id) { return byId(apId(id)); }
@@ -249,7 +249,7 @@ function APState() {
   this.setState = function(pushseq) {
     pushseq = pushseq || this.autosync;
     // called to reset the Plot state after an operation
-    if (apDebug>0) { console.log("enter setState"); }
+    if (apDebug>1) { console.log("enter setState"); }
     if (this.seq && this.seq != this.get_sequence_string()) {
       if (pushseq) this.set_sequence_string( this.seq );
     }
@@ -367,7 +367,7 @@ function DotPlotShape(apc, seq, con, plis) {
     for (var c=0; c<row.length; c++) row[c]=0.0;
     pprows[r] = row;
   }
-  if (apDebug>0) console.log('fill pprows '+plis.length);
+  if (apDebug>1) console.log('fill pprows '+plis.length);
   for (i=0; i<plis.length; i++) {
     var pp = plis[i];
     if (pp.length==3) {
@@ -390,6 +390,7 @@ function DotPlotShape(apc, seq, con, plis) {
 // add in an unconstrained base state for bonus offset
 DotPlotShape.prototype.aptBonus = function ( dp1, feBonus ) {
   feBonus = feBonus || 4.86;
+  if (apDebug>0) console.log('feBonus='+feBonus);
   var b = apFEToWeight(-feBonus);
   var pp1 = dp1.pprows;
   var pp2 = this.pprows;
@@ -463,7 +464,7 @@ function parseConstrain(constrain) {
 function ConstrainShape(apc, constrain, mfe, bonus) {
   this.apc = apc; // must specify!!!
   this.mfe = mfe || 0.0;
-  this.bonus = bonus || (constrain ? -4.86 : 0.0);
+  this.bonus = bonus || 0.0;
   this.cons = constrain || ''; // uses (.)?
   this.match = parseConstrain(constrain);
   return this;
@@ -541,14 +542,14 @@ function ViewPort(apc,canvas) {
     }, true);
     canvas.addEventListener('mouseover', function(e) {
       // kludge: grab the keyboard focus whenever the window is entered
-      console.log('mouseover');
+      console.log('mouseover'+(myVP.apc.autosync?' autosync':''));
       canvas.focus({preventScroll: true});
+      if (myVP.apc.autosync) return myVP.apc.doSync();
       if (myVP.onmouseover) return myVP.onmouseover(e);
-      if (myVP.apc.autosync) return myVP.apc.onSync();
     }, true);
     canvas.addEventListener('mouseleave', function(e) {
       // kludge: grab the keyboard focus whenever the window is entered
-      console.log('mouseleave');
+      if (apDebug>1) console.log('mouseleave');
       myVP.apc.applet.focus({preventScroll: true});
     }, true);
   }
@@ -713,6 +714,8 @@ DesignModel.prototype.setval = function (id,val) {
 
 // the shapes, mfe, pairing probabilities, for state2
 DesignModel.prototype.setState2 = function (res) {
+  var bonus = Number(this.apc.getval('bonus')||4.86);
+  this.apc.setval('bonus',bonus);
   this.ns2 = res.ns;
   if (apDebug>1) console.log('setState2: ns2='+this.ns2)
   this.me2 = res.mfe;
@@ -720,7 +723,7 @@ DesignModel.prototype.setState2 = function (res) {
   this.dp2 = new DotPlotShape(this.apc,res.seq,res.con,res.plis);
   if (apDebug>1) console.log('setState2: plis.length='+res.plis.length)
   this.con = res.con;
-  if (res.con) this.dp2.aptBonus(this.dp1);
+  if (res.con) this.dp2.aptBonus(this.dp1,bonus);
   // finally, notify viewers
   this.notifyIfChanged(true);
 }
@@ -740,8 +743,10 @@ DesignModel.prototype.setState1 = function (res) {
 DesignModel.prototype.getState2 = function () {
   // finally, notify viewers
   if (!apStub) {
+    var bonus = Number(this.apc.getval('bonus')||4.86);
+    this.apc.setval('bonus',bonus);
     this.dp2 = new DotPlotShape(this.apc,this.seq,this.con,null);
-    if (this.con) this.dp2.aptBonus(this.dp1);
+    if (this.con) this.dp2.aptBonus(this.dp1,bonus);
     this.ns2 = this.apc.fold(this.seq,this.con);
     if (apDebug>0) console.log('ns2: '+this.ns2)
     this.me2 = this.apc.energy_of_structure(this.seq,this.ns2);
@@ -767,7 +772,7 @@ DesignModel.prototype.getState1 = function () {
 
 // look for multiple instances of common aptamers and make constraint strings
 DesignModel.prototype.findSites = function (seq,sites) {
-  console.log('findSites('+seq+')');
+  if (apDebug>1) console.log('findSites('+seq+')');
   for (var n=0; n<sites.length; n++) {
     var site = sites[n];
     if (seq.match(site.S1) && site.S2==undefined) {
@@ -915,7 +920,7 @@ DesignView.prototype.inXY = function(sx,sy) {
 DesignView.prototype.rescale = function (w,h) {
   w = w||this.w;
   h = w||this.h;
-  console.log("DesignView.rescale: w="+w+" h="+h);
+  if (apDebug>1) console.log("DesignView.rescale: w="+w+" h="+h);
   this.cols = (this.model? this.model.seq.length+1 : 1);
   this.scale = (Math.min(w,h)-2)/this.cols;
   this.lw = Math.floor(this.scale/2.0)+1;
@@ -926,7 +931,9 @@ DesignView.prototype.rescale = function (w,h) {
 }
 
 DesignView.prototype.fitWithin = function (x,y,w,h) {
-  console.log("DesignView.fitWithin: x="+x+" y="+y+" w="+w+" h="+h);
+  if (apDebug>1) {
+    console.log("DesignView.fitWithin: x="+x+" y="+y+" w="+w+" h="+h);
+  }
   x = x || 0;
   y = y || 0;
   this.x = x;
@@ -1084,7 +1091,7 @@ DesignView.prototype.hasMarkXY = function (selX, selY) {
   return false;
 }
 
-DesignView.prototype.doMarkXY = function (selX, selY, note) {
+DesignView.prototype.doMarkXY = function (selX, selY, note, automark) {
   note = note || this.inXY(selX,selY);
   var n3 = function(n) { return (n/1000).toFixed(3).slice(2); };
   //console.log("DesignView.doMarkXY: selX="+selX+" sely="+selY);
@@ -1093,7 +1100,7 @@ DesignView.prototype.doMarkXY = function (selX, selY, note) {
     var marks = this.marks || {};
     var tag = (selY==0?n3(selX):n3(selX)+":"+n3(selY));
     if (apDebug>1) console.log('note='+note);
-    if (marks[tag]) delete marks[tag];
+    if (marks[tag] && !automark) delete marks[tag];
     else marks[tag] = {'x': selX, 'y': selY, 'note': note};
     this.marks = marks;
     this.valid = false;
@@ -1126,7 +1133,7 @@ DesignModel.prototype.doRepOnOff = function () {
 }
 
 // mark the limits of the strongest aptamer and reporter sites
-DesignView.prototype.doMarkCons = function (con,on,note) {
+DesignView.prototype.doMarkCons = function (con,on,note,automark) {
   on = on || false;
   var re2 = /(\-*)([^-]+)(\-+)([^-]+)(\-*)/;
   var re1 = /(\-*)([^-]+)(\-*)/;
@@ -1138,13 +1145,13 @@ DesignView.prototype.doMarkCons = function (con,on,note) {
     var y1 = m2[1].length+m2[2].length+m2[3].length+m2[4].length;
     var y2 = m2[1].length+m2[2].length+m2[3].length+1;
     if (!on) { var t=x1; x1=y1; y1=t; t=x2; x2=y2; y2=t; }
-    this.doMarkXY( x1, y1, note );
-    this.doMarkXY( x2, y2, note );
+    this.doMarkXY( x1, y1, note, automark );
+    this.doMarkXY( x2, y2, note, automark );
   } else if (m1) {
     var x1 = m1[1].length+1;
     var y1 = m1[1].length+m1[2].length;
     if (!on) { var t=x1; x1=y1; y1=t; }
-    this.doMarkXY( x1, y1, note );
+    this.doMarkXY( x1, y1, note, automark );
   }
 }
 
@@ -1153,10 +1160,10 @@ DesignView.prototype.doAutoMark = function () {
   var model = this.model;
   if (model) {
     var apt = model.apt;
-    if (apt) this.doMarkCons(apt,true,model.aptid);
-    if (apDebug>0) console.log('reporter '+(this.on ? 'ON' : 'OFF'));
+    if (apt) this.doMarkCons(apt,true,model.aptid,true);
+    if (apDebug>1) console.log('reporter '+(this.on ? 'ON' : 'OFF'));
     var rep = model.rep;
-    if (rep) this.doMarkCons(rep,this.on,model.repid);
+    if (rep) this.doMarkCons(rep,this.on,model.repid,true);
     this.draw();
   }
   this.renote1();
@@ -1279,13 +1286,17 @@ DesignView.prototype.doSeqSubst = function (c,n) {
 DesignView.prototype.doOpXY = function (op, selX, selY, action) {
   action = action || 'click';
   console.log("DesignView.doOpXY: selX="+selX+" sely="+selY)
-  if (selX>0 && selX<=this.seq.length && selY>=0 || selY<=this.seq.length) {
-    if (['a','c','g','u'].includes(op)) {
-      var stamp = op.toUpperCase();
-      if ( action.match( /(shift-)/ ) ) stamp = invert(stamp);
+  var seq = this.model.seq;
+  if (selX>0 && selX<=seq.length && selY>=0 || selY<=seq.length) {
+    if (['a','c','g','u','/'].includes(op)) {
+      var stamp=(op=='/'?
+                 (selY==0?invert(seq[selX-1]):seq[selY-1]):
+                 op.toUpperCase());
+      if ( action.match( /(shift-)/ ) && op!='/' ) stamp = invert(stamp);
       var changed = this.doSeqSubst(stamp,selX,'seq');
       if (selX!=selY && selY>0 && selY<=this.model.seq.length) {
-        changed = this.doSeqSubst(invert(stamp),selY,'seq') || changed;
+        stamp = (op=='/'?seq[selX-1]:invert(stamp));
+        changed = this.doSeqSubst(stamp,selY,'seq') || changed;
       }
       if (changed) {
         this.model.setseq(this.seq);
@@ -1333,7 +1344,7 @@ DesignView.prototype.recompute = function () {
       this.ns1 = new ConstrainShape(this.apc,model.ns1);
       this.ns2 = new ConstrainShape(this.apc,model.ns2);
       this.on = model.doRepOnOff();
-      if (apDebug>0) console.log('reporter '+(this.on ? 'ON' : 'OFF'));
+      if (apDebug>1) console.log('reporter '+(this.on ? 'ON' : 'OFF'));
       model.valid = true;
     }
     if (this.automark) this.doAutoMark();
@@ -1476,7 +1487,7 @@ DesignView.prototype.drawMark = function(ctx,sx,sy,c) {
 }
 
 DesignView.prototype.drawMarks = function (ctx,c) {
-  console.log("DesignView.drawMarks");
+  if (apDebug>1) console.log("DesignView.drawMarks");
   var marks = this.marks || {};
   var keys = Object.keys(marks);
   for (var i=0; i<keys.length; i++) {
@@ -1720,7 +1731,7 @@ DesignView.prototype.drawDotPlot = function(ctx,compare,withmfe) {
 
 
 DesignView.prototype.drawNodes = function (ctx) {
-  if (apDebug>0) console.log('drawNodes');
+  if (apDebug>1) console.log('drawNodes');
   var seq = this.seq;
   // draw all Nodes
   for (var i = 0; i < seq.length; i++) {
@@ -1730,7 +1741,7 @@ DesignView.prototype.drawNodes = function (ctx) {
 
 DesignView.prototype.draw = function (ctx) {
   ctx = ctx || this.apc.vp.ctx;
-  console.log('DesignView.draw: seq=',this.seq)
+  if (apDebug>1) console.log('DesignView.draw: seq=',this.seq)
   //this.drawNatural(ctx);
   if (this.view=='natural') this.drawNatural(ctx);
   else if (this.view=='states') this.drawDotPlot(ctx,null,true);
@@ -2034,7 +2045,6 @@ APState.prototype.doPush = function(cb) {
   if (this.dm) {
     this.set_sequence_string(this.dm.seq);
   }
-  else console.log('dm='+this.dm)
   this.setState(true);
   return null;
 }
@@ -2046,10 +2056,9 @@ APState.prototype.doSync = function(cb) {
   this.autosync = true;
   this.getState();
   if (apDebug>0) console.log("doSync");
-  if (this.dm) {
+  if (this.dm && this.dm.seq != this.seq) {
     this.dm.setseq( this.seq );
   }
-  else console.log('dm='+this.dm)
   this.setState(true);
   return null;
 }
@@ -2063,7 +2072,6 @@ APState.prototype.doUnmark = function(cb) {
   if (this.dv) {
     this.dv.doUnmark();
   }
-  else console.log('dm='+this.dm)
   this.setState();
   return null;
 }
