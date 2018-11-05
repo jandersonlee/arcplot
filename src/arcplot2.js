@@ -1,5 +1,7 @@
 // to minimize global namespace pollution use "ap" or "AP" prefix
-// v1.1: tetracycline hack v1
+// v1.3: add bestSites to find best binding aptamer site
+// v1.2: add support for QUERY initialization (arcplot?seq=...)
+// v1.1: tetracycline hack v2
 // v1.0: added Like/Unlike, j(unk), k(eep), b(ack), n(ext), bonus==-4.0
 // v0.9: add Base, Unbase, Save, Focus, Snap, Unsnap, Merge, Resnap, Clear
 // v0.8: convert to cpp for revised state 2 pairing probabilities
@@ -7,7 +9,7 @@
 // v0.6: dependency chain operations
 // v0.5: more Sync and AutoMark fixes
 var apPrefix = "AP";
-var APversion = 1.0;
+var APversion = 1.3;
 function apId(id) { return apPrefix+id; }
 function byId(id) { return document.getElementById(id); }
 function apById(id) { return byId(apId(id)); }
@@ -67,6 +69,14 @@ var apAptamers = [
    'M1': 'GAGGAUAU_AGAAGGC,(......(_).....)',
    'M2': 'AGAAGGC_GAGGAUAU,(.....(_)......)'
   },
+  {'id': 'FMNgu',
+   'S1': 'GAGGAUAU',
+   'C1': '(......(',
+   'S2': 'AGAAGGU',
+   'C2': ').....)',
+   'M1': 'GAGGAUAU_AGAAGGU,(......(_).....)',
+   'M2': 'AGAAGGU_GAGGAUAU,(.....(_)......)'
+  },
   {'id': 'FMNcg',
    'S1': 'CAGGAUAU',
    'C1': '(......(',
@@ -74,6 +84,14 @@ var apAptamers = [
    'C2': ').....)',
    'M1': 'CAGGAUAU_AGAAGGG,(......(_).....)',
    'M2': 'AGAAGGG_CAGGAUAU,(.....(_)......)'
+  },
+  {'id': 'FMNug',
+   'S1': 'UAGGAUAU',
+   'C1': '(......(',
+   'S2': 'AGAAGGG',
+   'C2': ').....)',
+   'M1': 'UAGGAUAU_AGAAGGG,(......(_).....)',
+   'M2': 'AGAAGGG_UAGGAUAU,(.....(_)......)'
   },
   {'id': 'FMNau',
    'S1': 'AAGGAUAU',
@@ -106,6 +124,14 @@ var apAptamers = [
    'C2': ')...)))...)',
    'M1': 'GAUACCAG_CCCUUGGCAGC,(...((((_)...)))...)',
    'M2': 'CCCUUGGCAGC_GAUACCAG,(...(((...(_)...))))'
+  },
+  {'id': 'ATP',
+   'S1': 'GGGAAGAAACUGC',
+   'C1': '(...........(',
+   'S2': 'GGC',
+   'C2': ').)',
+   'M1': 'GGGAAGAAACUGC_GGC,(...........(_).)',
+   'M2': 'GGC_GGGAAGAAACUGC,(.(_)...........)'
   },
   {'id': 'Tetracycline',
    'S1': 'CUAAAACAUACC',
@@ -739,6 +765,18 @@ ViewPort.prototype.onkeypress = function(e) {
   } else if (op=='k') {
     this.apc.doLike();
     this.apc.onNext();
+  } else if (op=='F') {
+    console.log('footnote');
+    this.apc.dv.startFootnotes();
+  } else if (op=='P') {
+    console.log('autolike');
+    this.apc.dv.startAutolike();
+  } else if (op=='I' || op=='i') {
+    console.log('snap');
+    //var data = this.apc.canvas.toDataURL("image/png");
+    //console.log("data: "+data);
+    //apById('SnapDiv').innerHTML = '<img src="'+data+'"/>';
+    apById('SnapDiv').innerHTML = this.apc.dv.snippet();
   } else {
     this.apc.op = op;
     this.apc.setval('op',op);
@@ -890,6 +928,9 @@ DesignModel.prototype.setStates = function (res) {
   if (apDebug>1) console.log('setStates: me2='+this.me2)
   this.dp1 = new DotPlotShape(this.apc,res.seq,null,res.plis);
   // finally, notify viewers
+  console.log('setStates got '+res.seq);
+  this.got = res.seq;
+  this.resite();
   this.notifyIfChanged(true);
 }
 
@@ -912,6 +953,7 @@ DesignModel.prototype.getState2 = function () {
 // recompute the shapes, mfe, pairing probabilities, etc.
 DesignModel.prototype.getState1 = function () {
   // finally, notify viewers
+  this.got = null;
   if (!apStub) {
     this.dp1 = new DotPlotShape(this.apc,this.seq,null,null);
     this.ns1 = this.apc.fold(this.seq);
@@ -922,7 +964,8 @@ DesignModel.prototype.getState1 = function () {
     this.apc.pullstates(this.seq,this.mtf,this.setStates.bind(this));
   } else {
     console.log('old style...');
-    this.apc.pullstate(this.seq,null,this.setState1.bind(this));
+    this.apc.pull2states(this.seq,this.con,this.apc.bonus,this.setStates.bind(this));
+    //this.apc.pullstate(this.seq,null,this.setState1.bind(this));
   }
 }
 
@@ -964,6 +1007,33 @@ DesignModel.prototype.findSites = function (seq,sites) {
     }
   }
   return [];
+}
+
+// need to have the dp1 initialized for this to work
+DesignModel.prototype.bestSite = function (seq,sites,on) {
+  if (apDebug>1) console.log('bestSite: '+seq);
+  var cons = this.findSites(seq,sites);
+  if (apDebug>1) console.log('cons: '+cons.join(','));
+  if (cons.length==0) return "";
+  var con = "";
+  var rank = -1;
+  for (var n=0; n<cons.length; n++) {
+    if (apDebug>1) console.log('cons['+n+']='+cons[n][0]);
+    var r = this.doRateCons(cons[n][0],on);
+    if (r>rank) {
+      rank = r;
+      con = cons[n][0];
+    }
+    if (!on) {
+      r = this.doRateCons(cons[n][0],true);
+      if (r>rank) {
+        rank = r;
+        con = cons[n][0];
+      }
+    }
+  }
+  if (apDebug>1) console.log('best '+rank+' '+con);
+  return con;
 }
 
 // look for multiple instances of common aptamers and make motif strings
@@ -1022,7 +1092,9 @@ DesignModel.prototype.minEnergy = function (sites) {
 // (re)compute the apt, con and rep sites/strings
 DesignModel.prototype.resite = function () {
   // single aptamers for the moment
-  this.apt = this.findSite(this.seq,apAptamers);
+  this.apt = (this.got ?
+              this.bestSite(this.seq,apAptamers,true) :
+              this.findSite(this.seq,apAptamers));
   this.mtf = this.findMotif(this.seq,apAptamers,this.apc.bonus);
   this.aptid = (this.apt ? this.siteid : '');
   if (apDebug>1) console.log('apt: '+this.apt)
@@ -1032,13 +1104,11 @@ DesignModel.prototype.resite = function () {
   if (apDebug>0) console.log('mtf: '+this.mtf)
   if (apDebug>1) console.log('con: '+this.con)
   this.setval('con',this.con);
-  this.reps = this.findSites(this.seq,apReporters);
-  if (apDebug>0) console.log('reps='+this.reps);
-  if (!apStub && this.reps.length>1) {
-    this.rep = this.minEnergy(this.reps);
-  } else this.rep = this.findSite(this.seq,apReporters);
+  this.rep = (this.got ?
+              this.bestSite(this.seq,apReporters,false) :
+              this.findSite(this.seq,apReporters));
   this.repid = (this.rep ? this.siteid : '');
-  if (apDebug>1) console.log('rep: '+this.rep)
+  if (apDebug>0) console.log('rep: '+this.rep)
   this.setval('rep',this.rep);
 }
 
@@ -1072,9 +1142,15 @@ function DesignView(apc,model) {
   this.style = apc.style;
   this.valid = true;
   // for the moment, default to natural mode
-  this.style = 'arc';
-  this.view = 'states';
+  this.style = apc.getval('style') || 'arc';
+  this.view = apc.getval('view') || 'states';
   this.automark = true;
+  this.autolike = false;
+  this.footnote = false;
+  this.footseq = null;
+  this.footcount = 0;
+  this.footmax = 100;
+  this.footnotes = [];
   var myView = this;
   this.changed = function (model) {
     myView.valid = false;
@@ -1088,10 +1164,154 @@ function DesignView(apc,model) {
       myView.recompute();
       myView.draw(apc.vp.ctx);
       apc.vp.valid = false;
+      if (this.footnote && this.model.got==this.footseq) this.addFootnote();
+      else if (this.autolike && this.model.got==this.likeseq) this.addLike();
     }
   }
   if (model) model.addInterest(this,this.changed.bind(this));
   return this;
+}
+
+DesignView.prototype.startFootnotes = function() {
+  this.footcount = 0;
+  this.footmax = 100;
+  this.footnotes = [];
+  this.footnote = true;
+  this.nextFootnote();
+} 
+
+DesignView.prototype.asArcplotURL = function (seq) {
+  seq = seq || this.seq;
+  var auth = this.apc.getval('auth') || 'http://35.185.225.39:8888';
+  var pack = [auth,'/arcplot2?seq=',seq];
+  if (this.apc.bonus!=-4.0) pack.push('&bonus='+this.apc.bonus);
+  if (this.style!="arc") pack.push('&style='+this.style);
+  if (this.view!="states") pack.push('&view='+this.view);
+  return pack.join('');
+}
+
+DesignView.prototype.asGameURL = function (row) {
+  if (!row || row.length<5) return "";
+  if (row[3].match(/^\d+$/)==null) return "";
+  if (row[4].match(/^\d+$/)==null) return "";
+  var pack = [
+    "https://eternagame.org/game/browse/",
+    row[3],
+    "/?filter1=Id&filter1_arg1=",
+    row[4],
+    "&filter1_arg2=",
+    row[4]
+    ];
+  return pack.join('');
+}
+
+DesignView.prototype.asLink = function (url) {
+  return ['<a href="',url,'">',url,'</a>'].join('');
+}
+
+DesignView.prototype.addFootnote = function() {
+  var snippet = this.snippet();
+  this.footnotes.push(snippet);
+  index = Number(this.apc.getval('index') || '0');
+  this.apc.setval('index',index+1);
+  this.footcount = this.footcount + 1;
+  this.footseq = null;
+  if (this.footnote && this.footcount<this.footmax) {
+    console.log('addFootnote '+this.footcount+" "+this.seq);
+    setTimeout(this.nextFootnote.bind(this), 500);
+  } else if (this.footnote) {
+    console.log('addFootnote end '+this.footcount+'/'+this.footnotes.length);
+    var f = this.footnotes.join('<br/>');
+    console.log('size='+f.length);
+    apById("SnapDiv").innerHTML=f;
+    this.footnotes = [];
+    this.footnote = false;
+  }
+} 
+
+// nextFootnote callback
+DesignView.prototype.nextFootnote = function() {
+  index = Number(this.apc.getval('index') || '0');
+  var designs = this.apc.parseDesigns(this.apc.getval('Notes'));
+  n = Math.max(1,index);
+  if (n<=designs.length && this.footcount<this.footmax) {
+    apById("SnapDiv").innerHTML=[this.footcount+1," of ",this.footmax].join('');
+    if (n>0) {
+      this.footrow = designs[n-1];
+      apById('count').innerText = designs.length.toString();
+      var seq = designs[n-1][0];
+      console.log('nextFootnote '+n+" "+seq);
+      if (seq && this.model) {
+        this.footseq = seq;
+        this.model.setseq(seq);
+        this.apc.showLike(designs[n-1][2]);
+      }
+    }
+  } else if (this.footnote) {
+    console.log('nextFootnote end '+this.footcount+'/'+this.footnotes.length);
+    var f = this.footnotes.join('<br/>');
+    console.log('size='+f.length);
+    apById("SnapDiv").innerHTML=f;
+    this.footnotes = [];
+    this.footnote = false;
+  }
+}
+
+DesignView.prototype.startAutolike = function() {
+  this.autolike = true;
+  this.likenotes = [];
+  this.nextLike();
+} 
+
+DesignView.prototype.likeable = function() {
+  return this.model.doAutoLike();
+}
+
+DesignView.prototype.addLike = function() {
+  var snippet = this.likeable();
+  this.likenotes.push(snippet);
+  console.log('addLike '+this.likenotes.length);
+  this.apc.showLike(this.like);
+  index = Number(this.apc.getval('index') || '0');
+  this.apc.setval('index',index+1);
+  this.likeseq = null;
+  if (this.autolike) {
+    setTimeout(this.nextLike.bind(this), 500);
+  } else if (this.footnote) {
+    console.log('addLike end '+this.likenotes.length);
+    var f = this.likenotes.join('<br/>');
+    console.log('size='+f.length);
+    apById("SnapDiv").innerHTML=f;
+    this.likenotes = [];
+    this.autolike = false;
+  }
+} 
+
+// nextLike callback
+DesignView.prototype.nextLike = function() {
+  index = Number(this.apc.getval('index') || '0');
+  var designs = this.apc.parseDesigns(this.apc.getval('Notes'));
+  n = Math.max(1,index);
+  if (n<=designs.length) {
+    apById("SnapDiv").innerHTML=[n+1," of ",designs.length].join('');
+    if (n>0) {
+      this.footrow = designs[n-1];
+      apById('count').innerText = designs.length.toString();
+      var seq = designs[n-1][0];
+      console.log('nextLike '+n+" "+seq);
+      if (seq && this.model) {
+        this.likeseq = seq;
+        this.model.setseq(seq);
+      }
+    }
+  } else if (this.autolike) {
+    console.log('nextLike end '+n+'/'+designs.length);
+    var f = this.likenotes.join('<br/>');
+    console.log('size='+f.length);
+    apById("SnapDiv").innerHTML=f;
+    this.likenotes = [];
+    this.autolike = false;
+  }
 }
 
 // Determine if a point is inside the DesignView's bounds
@@ -1250,7 +1470,7 @@ DesignView.prototype.pairnote = function(x,y,n) {
 }
 
 DesignView.prototype.renote2 = function(x,y) {
-  var note2 = [this.pairnote(x,y),
+  var note2 = [(x&&y ? this.pairnote(x,y) : ""),
     this.model.seq,' ',rnd2html(this.model.me1-this.model.me2,8),'<br/>',
     this.model.ns1,' ',rnd2html(this.model.me1,8),'<br/>',
     this.model.ns2,' ',rnd2html(this.model.me2,8)
@@ -1341,6 +1561,40 @@ DesignModel.prototype.doRepOnOff = function () {
   return false;
 }
 
+// return the probability of x,y pairing in state (on ? 2 : 1)
+DesignModel.prototype.doRateXY = function (selX, selY, on) {
+  //console.log("doRateXY: selX="+selX+" sely="+selY);
+  var ps = this.pairstats( selX, selY );
+  //console.log(ps.join(','));
+  return (on ? ps[1] : ps[0]);
+}
+
+// estimate the strength of an aptamer or reporter site
+// as the product of the on pairing probabilities of closing pairs
+DesignModel.prototype.doRateCons = function (con,on) {
+  if (apDebug>1) console.log('rate '+con+' '+typeof(con)+' '+on);
+  on = on || false;
+  var re2 = /(\-*)([^-]+)(\-+)([^-]+)(\-*)/;
+  var re1 = /(\-*)([^-]+)(\-*)/;
+  var m2 = con.match(re2);
+  var m1 = con.match(re1);
+  var rval = -1;
+  if (m2) {
+    var x1 = m2[1].length+1;
+    var x2 = m2[1].length+m2[2].length;
+    var y1 = m2[1].length+m2[2].length+m2[3].length+m2[4].length;
+    var y2 = m2[1].length+m2[2].length+m2[3].length+1;
+    if (!on) { var t=x1; x1=y1; y1=t; t=x2; x2=y2; y2=t; }
+    rval = this.doRateXY( x1, y1, on) * this.doRateXY( x2, y2, on);
+  } else if (m1) {
+    var x1 = m1[1].length+1;
+    var y1 = m1[1].length+m1[2].length;
+    if (!on) { var t=x1; x1=y1; y1=t; }
+    rval = this.doRateXY( x1, y1, on);
+  }
+  return rval;
+}
+
 // mark the limits of the strongest aptamer and reporter sites
 DesignView.prototype.doMarkCons = function (con,on,note,automark) {
   on = on || false;
@@ -1376,6 +1630,97 @@ DesignView.prototype.doAutoMark = function () {
     this.draw();
   }
   this.renote1();
+}
+
+DesignModel.prototype.pairprob = function(x,y,dp) {
+  if (dp) {
+    if (x>0 && x<=this.seq.length) {
+      if (y>0 && y<=this.seq.length && y!=x) {
+        return dp.pprows[x][y];
+      } else {
+        return dp.pprows[0][x];
+      }
+    }
+  }
+  return 0.0;
+}
+
+// returns [p1,p2,onx,offx]
+DesignModel.prototype.pairstats = function(x,y) {
+  if (this.dp1) {
+    var x1 = Math.min(x,y);
+    var x2 = Math.max(x,y);
+    var y1 = x2;
+    var y2 = x1;
+    var p1 = this.pairprob(x1,y1,this.dp1);
+    var p2 = this.pairprob(x2,y2,this.dp1);
+    return [p1,p2,(p1>0.0?p2/p1:1e6),(p2>0.0?p1/p2:1e6)];
+  }
+  return [0.0,0.0,0.0,0.0];
+}
+
+DesignModel.prototype.doLikeXY = function (selX, selY, on, isrep ) {
+  var m = this.metrics;
+  //console.log("doLikeXY: selX="+selX+" sely="+selY);
+  var ps = this.pairstats( selX, selY );
+  if (!isrep) {
+    // aptamer
+    m['minAN'] = Math.min(ps[1],m['minAN'])
+    m['maxAX'] = Math.max(ps[2],m['maxAX'])
+  } else if (on) {
+    // same state (on=2)
+    m['minRN'] = Math.min(ps[1],m['minRN'])
+    m['maxRX'] = Math.max(ps[2],m['maxRX'])
+  } else {
+    // exclusion
+    m['minRN'] = Math.min(ps[0],m['minRN'])
+    m['maxRX'] = Math.max(ps[3],m['maxRX'])
+  }
+}
+
+// check the limits of the strongest aptamer and reporter sites
+DesignModel.prototype.doLikeCons = function (con,on,isrep) {
+  on = on || false;
+  isrep = isrep || false;
+  var re2 = /(\-*)([^-]+)(\-+)([^-]+)(\-*)/;
+  var re1 = /(\-*)([^-]+)(\-*)/;
+  var m2 = con.match(re2);
+  var m1 = con.match(re1);
+  if (m2) {
+    var x1 = m2[1].length+1;
+    var x2 = m2[1].length+m2[2].length;
+    var y1 = m2[1].length+m2[2].length+m2[3].length+m2[4].length;
+    var y2 = m2[1].length+m2[2].length+m2[3].length+1;
+    if (!on) { var t=x1; x1=y1; y1=t; t=x2; x2=y2; y2=t; }
+    this.doLikeXY( x1, y1, on, isrep );
+    this.doLikeXY( x2, y2, on, isrep );
+  } else if (m1) {
+    var x1 = m1[1].length+1;
+    var y1 = m1[1].length+m1[2].length;
+    if (!on) { var t=x1; x1=y1; y1=t; }
+    this.doLikeXY( x1, y1, on, isrep );
+  }
+}
+
+// sets this.like
+DesignModel.prototype.doAutoLike = function () {
+  this.like = true;
+  var m = this.metrics || {
+    'minAN': 1.0,
+    'maxAX': 0.0,
+    'minRN': 1.0,
+    'maxRX': 0.0,
+  };
+  this.metrics = m;
+  var apt = this.apt;
+  if (apt) this.doLikeCons(apt,true,false);
+  if (apDebug>1) console.log('reporter '+(this.on ? 'ON' : 'OFF'));
+  var rep = this.rep;
+  if (rep) this.doLikeCons(rep,this.on,true);
+  var snippet = ['minAN=',m.minAN,' maxAX=',m.maxAX,
+              ' minRN=',m.minRN,' maxRX=',m.maxRX].join('');
+  console.log(snippet);
+  return snippet;
 }
 
 // change a named element of undoable/redoable state logging the change
@@ -1647,6 +1992,7 @@ DesignView.prototype.recompute = function () {
   if (model) {
     if (model.seq!=this.seq || true) {
       // model.valid is false if the model has changed
+      if (apDebug>1) console.log('recompute '+model.seq); 
       this.seq = model.seq;
       this.rescale();
       this.me1 = model.me1;
@@ -2250,7 +2596,7 @@ DesignView.prototype.drawDotPlot = function(ctx,compare,withmfe) {
   var ring = this.apc.style=='ring';
   if (!ring && (!this.apc.mem || !this.apc.mem.dp1 || !compare || withmfe)) {
     // single dotplot
-    if (apDebug>0) console.log('drawDotPlot: single');
+    if (apDebug>1) console.log('drawDotPlot: single');
     // upper
     var plis = (this.model.dp1 ? this.model.dp1.plis : []);
     if (apDebug>1) console.log('upper length='+plis.length);
@@ -2312,13 +2658,31 @@ DesignView.prototype.drawNodes = function (ctx) {
 
 DesignView.prototype.draw = function (ctx) {
   ctx = ctx || this.apc.vp.ctx;
-  if (apDebug>1) console.log('DesignView.draw: seq=',this.seq)
+  if (apDebug>0) console.log('draw: '+this.seq)
   //this.drawNatural(ctx);
   if (this.view=='natural') this.drawNatural(ctx);
   else if (this.view=='states') this.drawDotPlot(ctx,null,true);
   else this.drawDotPlot(ctx,this.apc.compare,false);
   this.renote1();
   this.renote2();
+  if (apDebug>1) console.log('drawn: '+this.seq)
+}
+
+DesignView.prototype.snippet = function () {
+  var row = this.footrow || [];
+  if (apDebug>0) console.log('snippet: '+this.seq)
+  var data = this.apc.canvas.toDataURL("image/png");
+  var parts = ['<img src="'+data+'"/>', this.asLink(this.asArcplotURL())];
+  if (row&&row[0]!=this.seq) {
+    console.log('OOO in snippet');
+    parts.push('OUT OF ORDER?!');
+  }
+  var gameurl = this.asGameURL(row);
+  if (gameurl) parts.push(this.asLink(gameurl));
+  if (row&&row.length>3) parts.push(row.slice(3).join(','));
+  parts.push(this.note2);
+  parts.push(this.note1);
+  return parts.join('<br/>');
 }
 
 ViewPort.prototype.getMouse = function(e) {
@@ -2501,9 +2865,35 @@ APState.prototype.parseState = function(txt,cb) {
 // return the mfe, shape, and pairing probabilities to a callback
 APState.prototype.pullstates = function(seq,mtf,cb) {
   if (apDebug>1) console.log('pullstates: seq='+seq);
-  if (apDebug>1 && con) console.log('pullstates: mtf='+mtf);
+  if (apDebug>1 && mtf) console.log('pullstates: mtf='+mtf);
   var xhr = new XMLHttpRequest();
   var path = "/cpp?seq="+seq+(mtf ? "&mtf="+mtf : "");
+  if (apDebug>1) console.log('path='+path);
+  xhr.open("GET", path, true);
+  var myState = this;
+  xhr.onload = function (e) {
+    if (xhr.readyState === 4) {
+      if (xhr.status === 200) {
+        myState.parse2states(xhr.responseText,cb);
+      } else {
+        console.error(xhr.statusText);
+      }
+    }
+  };
+  xhr.onerror = function (e) {
+    console.error(xhr.statusText);
+  };
+  xhr.send(null);
+}
+
+// return the mfe, shape, and pairing probabilities to a callback
+APState.prototype.pull2states = function(seq,con,bonus,cb) {
+  var bonus = this.bonus || -4.0;
+  if (apDebug>0) console.log('pull2states: seq='+seq);
+  if (apDebug>0 && con) console.log('pull2states: con='+con);
+  if (apDebug>0) console.log('pull2states: bonus='+bonus);
+  var xhr = new XMLHttpRequest();
+  var path = "/spp?seq="+seq+(con?"&con="+con:"")+"&bonus="+bonus;
   if (apDebug>1) console.log('path='+path);
   xhr.open("GET", path, true);
   var myState = this;
@@ -2739,7 +3129,7 @@ APState.prototype.doPrune = function() {
   if (apDebug>0) console.log("purge "+designs.length);
   for (var i=designs.length-1; i>=0; i--) {
     var row = designs[i];
-    if (row.length==3 && row[2]=='false') {
+    if (row.length>=3 && row[2]=='false') {
       designs.splice(i,1);
       if (apDebug>0) console.log('drop '+i+' '+row);
     } else if (apDebug>1) console.log('keep '+i+' '+row);
@@ -2865,7 +3255,7 @@ APState.prototype.doGoto = function(n) {
   if (n>0) {
     this.setval('index',n);
     var seq = designs[n-1][0];
-    if (seq && this.dm) this.dm.setseq(seq);
+    if (seq && this.dm && this.dm.seq!=seq) this.dm.setseq(seq);
     apById('count').innerText = designs.length.toString();
     this.showLike(designs[n-1][2])
   }
@@ -3187,6 +3577,18 @@ function apTextArea(id,value) {
           '</textarea>\n'].join('');
 }
 
+function apGetUrlParameter(name) {
+    name = name.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
+    var regex = new RegExp('[\\?&]' + name + '=([^&#]*)');
+    var results = regex.exec(window.location.toString());
+    console.log('query: '+window.location.toString());
+    var val = (results === null ?
+               '' :
+               decodeURIComponent(results[1].replace(/\+/g, ' ')));
+    if (apDebug>0) console.log('query['+name+']='+val);
+    return val;
+};
+
 function init() {
   if (!apInstalled) {
   console.log("before html");
@@ -3252,6 +3654,7 @@ function init() {
            apTextArea('Notes'),
            '<h4>Config</h4>\n',
            apTextArea('Config'),
+        '<div id="',apId('SnapDiv'),'">','</div>\n',
       '</div>'].join('')
     );
     console.log('html appended')
@@ -3269,13 +3672,23 @@ function init() {
   }
   apInstalled = true;
   if (apStub) {
-    byId('seq').value = "GGGUACAUCGGAGGAUAUCAUGUAAAUACAUGAGGAUCACCCAUGUCGAUGGAGACAUCGGAGGUUGAGAAGGCCGAUGUACCG";
+    var seq = (apGetUrlParameter("seq") || 
+        "GGGUACAUCGGAGGAUAUCAUGUAAAUACAUGAGGAUCACCCAUGUCGAUGGAGACAUCGGAGGUUGAGAAGGCCGAUGUACCG");
+    byId('seq').value = seq;
   }
   // Get things started
   var apc = new APState();
   setTimeout( apc.activateCBs.bind(apc), 500 );
   console.log( "initializing: " + apBoosterTitle );
   apc.getState();
+  if (apStub) {
+    var view = apGetUrlParameter("view") || "states";
+    var style = apGetUrlParameter("style") || "arc";
+    var bonus = apGetUrlParameter("bonus") || "-4";
+    apc.setval("view",view);
+    apc.setval("style",style);
+    apc.setval("bonus",bonus);
+  }
   apc.make_cmap();
   apc.make_graymap();
   apc.make_cmap2a(4,true,0.7);
