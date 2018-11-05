@@ -1,14 +1,19 @@
-Network Ports and Firewalls
-
-    Be sure that the port you have chosen to use (80/8888) is open in
-    your firewall. If using port 80 you may need to run using sudo.
-    If using port 8888 (the default) you may need to tweak your firewall.
-
-
 Installation
+
+This repo contains a version of the arcplot 2-state RNA evaluation
+web tool/service for use with a Linux server (Ubuntu/Debian,
+Redhat/Centos). It has been tested with a Google Cloud Ubuntu instance.
+
+The repo contains compiled versions of the cgi-bin binaries to compute
+the pairing probabilities as well as their source files, but does not
+include compilation directions. It also contains the .js and .html files
+for the production (arcplot) and development (arcplot2) versions of the
+javascript based arcplot tool web-page. Documentation for using the tool
+is found elsewhere at a link included at the top of the arcplot web page.
 
 The default is to run more-or-less in place. You will need to install
 nodejs and a few other packages in order to run the simple webserver.
+
 On Ubuntu systems this may look something like:
 
     sudo apt-get install -y git
@@ -23,11 +28,18 @@ On Ubuntu systems this may look something like:
     # sudo ./runsubopt.sh 80 # if using port 80 as root
 
 
+Network Ports and Firewalls
+
+    Be sure that the port you have chosen to use (80/8888) is open in
+    your firewall. If using port 80 you may need to run as root using sudo.
+    If using port 8888 (the default) you may need to tweak your firewall.
+
+
 Main Files and Directories
 
 bin/                  holds the cgi-bin scripts and binaries
 nodejs/               web server directory
-nodejs/subopt.js      web server script
+nodejs/subopt.js      a simple web server script
 nodejs/runsubopt.sh   launch web server script
 nodejs/data/          holds files served by the web server
 
@@ -51,10 +63,11 @@ https://www.tbi.univie.ac.at/RNA/download/sourcecode/2_4_x/ViennaRNA-2.4.10.tar.
 
 The spp.cpp and dpfe.cpp tools are modeling code that is less accurate for
 the second state pairing probabilities, but are necessary at this point
-to handle aptamers/reporteres with multiloops (e.g. tetracycline). It was
+to handle aptamers/reporters with multiloops (e.g. tetracycline). It was
 developed/compiled against a much older version of the ViennaRNA-2.1.19
 libraries.
 
 When compiled, these tools should be copied into the bin/ directory
 where the arcplot web-server can access them. Precompiled binary versions
 have been supplied.
+

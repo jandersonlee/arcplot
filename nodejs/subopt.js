@@ -284,6 +284,7 @@ http.createServer(function(request, response) {
   }
 
   var filename = path.join(rootdir, pathname);
+  if (fs.statSync(filename).isDirectory()) filename += '/index.html';
   fs.exists(filename, function(exists) {
     if(!exists) {
       response.writeHead(404, {"Content-Type": "text/plain; charset=us-ascii"});
@@ -291,7 +292,6 @@ http.createServer(function(request, response) {
       response.end();
       return;
     }
-    if (fs.statSync(filename).isDirectory()) filename += '/index.html';
     fs.readFile(filename, "binary", function(err, file) {
       if(err) {
         response.writeHead(500, {"Content-Type": "text/plain; charset=us-ascii"});
