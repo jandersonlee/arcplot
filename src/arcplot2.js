@@ -1,4 +1,6 @@
 // to minimize global namespace pollution use "ap" or "AP" prefix
+// v1.5: d1/d2 bugfix plus 'd' 'D' and 'M' commands
+// v1.4: autolike
 // v1.3: add bestSites to find best binding aptamer site
 // v1.2: add support for QUERY initialization (arcplot?seq=...)
 // v1.1: tetracycline hack v2
@@ -9,7 +11,7 @@
 // v0.6: dependency chain operations
 // v0.5: more Sync and AutoMark fixes
 var apPrefix = "AP";
-var APversion = 1.3;
+var APversion = 1.5;
 function apId(id) { return apPrefix+id; }
 function byId(id) { return document.getElementById(id); }
 function apById(id) { return byId(apId(id)); }
@@ -391,7 +393,7 @@ APState.prototype.make_cmap = function (colors) {
   binsize = Math.min(10,Math.max(0.01,binsize))
   this.binsize = binsize;
   this.setval('binsize',rnd2(this.binsize))
-  console.log("bins="+cmap.length+" binsize="+this.binsize);
+  if(apDebug>1) console.log("bins="+cmap.length+" binsize="+this.binsize);
   this.cmap = cmap;
   return cmap;
 }
@@ -405,7 +407,7 @@ APState.prototype.make_graymap = function (setcmap) {
 APState.prototype.make_cmap2 = function (graymap,redcyan) {
   graymap = graymap || this.make_graymap(false);
   redcyan = redcyan || false;
-  console.log('make_cmap2: redcyan='+redcyan);
+  if(apDebug>1) console.log('make_cmap2: redcyan='+redcyan);
   this.redcyan = redcyan
   var len = graymap.length;
   this.nbins2 = len+1;
@@ -442,7 +444,7 @@ APState.prototype.make_cmap2a = function (len,redcyan,alpha) {
   var len = len || 4;
   this.redcyan = redcyan || true;
   alpha = alpha || 0.3;
-  console.log('make_cmap2a: redcyan='+redcyan+' alpha='+alpha);
+  if(apDebug>1) console.log('make_cmap2a: redcyan='+redcyan+' alpha='+alpha);
   this.nbins2 = len+1;
   var cmap2 = Array(this.nbins2*this.nbins2*2);
   for (var i=0; i<=len; i++) {
@@ -489,7 +491,7 @@ function DotPlotShape(apc, seq, con, plis) {
   this.con = con;
   var maxbase = seq.length;
   if (plis==null && !apStub) {
-    if (apDebug>0) console.log('make plis');
+    if (apDebug>1) console.log('make plis');
     var pprob = [];
     if (con) console.log('con="'+con+'"');
     if (con) pprob = apc.pairing_probabilities(seq,con);
@@ -536,7 +538,7 @@ function DotPlotShape(apc, seq, con, plis) {
 // add in an unconstrained base state for bonus offset
 DotPlotShape.prototype.aptBonus = function ( dp1, feBonus ) {
   feBonus = feBonus || -4.00;
-  if (apDebug>0) console.log('feBonus='+feBonus);
+  if (apDebug>1) console.log('feBonus='+feBonus);
   var b = apFEToWeight(-feBonus);
   var pp1 = dp1.pprows;
   var pp2 = this.pprows;
@@ -553,7 +555,7 @@ DotPlotShape.prototype.aptBonus = function ( dp1, feBonus ) {
     }
     scale = Math.max(scale,sum);
   }
-  if (apDebug>0) console.log('aptBonus: b='+b+' scale='+scale);
+  if (apDebug>1) console.log('aptBonus: b='+b+' scale='+scale);
   for (var r=0; r<pp2.length; r++) {
     var row2 = pp2[r];
     var sum = 0.0;
@@ -584,6 +586,7 @@ function LabModel(apc) {
 function parseConstrain(constrain) {
   // uses (.)- for constraints where - is "don't care"
   if (!constrain) return [];
+  if (apDebug>1) console.log('con:'+constrain);
   var match = new Array();
   match.length = constrain.length;
   var stack = new Array();
@@ -596,21 +599,24 @@ function parseConstrain(constrain) {
       match[i] = -1; // don't care
     } else if (c=='(') {
       match[i] = 0;  // pair 5' end
-      stack[sp]=i+1;
+      stack[sp]=i;
       sp++;
     } else if (c==')') {
       if (sp>0) {    // pair 3' end
         sp--;
-        match[i] = stack[sp];
-        match[stack[sp]-1] = i+1;
+        match[i] = stack[sp]+1;
+        match[stack[sp]] = i+1;
       } else {
-        apc.addNote("stack error in parseConstrain");
+        console.log("stack error in parseConstrain");
+        console.log(constrain);
       }
     } else {
-      apc.addNote("char error in parseConstrain");
+      console.log("char error in parseConstrain");
+      console.log(constrain);
       return [];
     }
   }
+  if (apDebug>1) console.log('mat:'+match.join(','));
   return match;
 }
 
@@ -697,7 +703,7 @@ function ViewPort(apc,canvas) {
     }, true);
     canvas.addEventListener('mouseover', function(e) {
       // kludge: grab the keyboard focus whenever the window is entered
-      console.log('mouseover'+(myVP.apc.autosync?' autosync':''));
+      if(apDebug>1) console.log('mouseover'+(myVP.apc.autosync?' autosync':''));
       canvas.focus({preventScroll: true});
       if (myVP.apc.autosync) return myVP.apc.doSync();
       if (myVP.onmouseover) return myVP.onmouseover(e);
@@ -766,17 +772,57 @@ ViewPort.prototype.onkeypress = function(e) {
     this.apc.doLike();
     this.apc.onNext();
   } else if (op=='F') {
-    console.log('footnote');
+    if(apDebug>0) console.log('footnote');
     this.apc.dv.startFootnotes();
   } else if (op=='P') {
-    console.log('autolike');
+    if(apDebug>0) console.log('autolike');
     this.apc.dv.startAutolike();
+  } else if (op=='M') {
+    if(apDebug>0) console.log('match');
+    apById('SnapDiv').innerHTML = '';
+    var dm = this.apc.dm;
+    if (dm && dm.ns1s && dm.ns2s) {
+      var m1 = dm.ns1s.match;
+      var m2 = dm.ns2s.match;
+      var seq = dm.seq;
+      var lis = ['n+1,b,m1,m2'];
+      for (var i=0;i<m1.length&&i<m2.length;i++) {
+         lis.push([i+1,seq[i],m1[i],m2[i]].join(','));
+      }
+      apById('SnapDiv').innerHTML = lis.join('<br/>');
+    }
+  } else if (op=='d') {
+    if(apDebug>0) console.log('dotplot');
+    apById('SnapDiv').innerHTML = '';
+    if (this.apc.dm && this.apc.dm.dp1) {
+      var pp = this.apc.dm.dp1.pprows;
+      var lis = ['r,c,p'];
+      for (var r=1; r<pp.length; r++) {
+        var row = pp[r];
+        for (var c=1; c<row.length; c++) {
+          if (row[c]>0.0) lis.push([r,c,row[c]].join(','));
+        }
+      }
+      apById('SnapDiv').innerHTML = lis.join('<br/>');
+    }
+  } else if (op=='D') {
+    if(apDebug>0) console.log('Dirty');
+    var dm = this.apc.dm;
+    dm.dlogging = true;
+    dm.dlog = [];
+    dm.doMetrics();
+    dm.dlog.sort(function(a, b){return b[4] - a[4]});
+    for (var i=0; i<dm.dlog.length; i++) {
+      dm.dlog[i] = dm.dlog[i].join(',');
+    }
+    apById('SnapDiv').innerHTML = dm.dlog.join('<br/>');
+    dm.dlogging = false;
   } else if (op=='I' || op=='i') {
-    console.log('snap');
+    if(apDebug>1) console.log('snap');
     //var data = this.apc.canvas.toDataURL("image/png");
     //console.log("data: "+data);
     //apById('SnapDiv').innerHTML = '<img src="'+data+'"/>';
-    apById('SnapDiv').innerHTML = this.apc.dv.snippet();
+    apById('SnapDiv').innerHTML = '<br/>'+this.apc.dv.snippet();
   } else {
     this.apc.op = op;
     this.apc.setval('op',op);
@@ -859,6 +905,8 @@ function DesignModel(apc,seq,lab) {
   this.dp1 = null; // dotplot for state 1
   this.dp2 = null; // dotplot for state 2
   this.changed = true;
+  this.got = null;
+  this.snippet = '';
   this.viewers = {}; // who to notify of changes
   this.noInterest = function (viewer) { 
     delete this.viewers[viewer];
@@ -899,7 +947,7 @@ DesignModel.prototype.setState2 = function (res) {
   if (apDebug>1) console.log('setState2: plis.length='+res.plis.length)
   this.con = res.con;
   var bonus = this.apc.bonus;
-  if (apDebug>0) console.log('bonus='+bonus+' me1='+this.me1+' me2='+this.me2);
+  if (apDebug>1) console.log('bonus='+bonus+' me1='+this.me1+' me2='+this.me2);
   if (res.con) this.dp2.aptBonus(this.dp1,bonus-(this.me1-this.me2));
   // finally, notify viewers
   this.notifyIfChanged(true);
@@ -928,9 +976,11 @@ DesignModel.prototype.setStates = function (res) {
   if (apDebug>1) console.log('setStates: me2='+this.me2)
   this.dp1 = new DotPlotShape(this.apc,res.seq,null,res.plis);
   // finally, notify viewers
-  console.log('setStates got '+res.seq);
+  if (apDebug>0) console.log('setStates got '+res.seq);
+  this.resite(true);
+  this.on = this.doRepOnOff();
   this.got = res.seq;
-  this.resite();
+  this.snippet = this.doMetrics();
   this.notifyIfChanged(true);
 }
 
@@ -939,10 +989,10 @@ DesignModel.prototype.getState2 = function () {
   // finally, notify viewers
   if (!apStub) {
     this.ns2 = this.apc.fold(this.seq,this.con);
-    if (apDebug>0) console.log('ns2: '+this.ns2)
+    if (apDebug>1) console.log('ns2: '+this.ns2)
     this.me2 = this.apc.energy_of_structure(this.seq,this.ns2);
     this.dp2 = new DotPlotShape(this.apc,this.seq,this.con,null);
-    if (apDebug>0) console.log('bonus='+bonus+' me1='+this.me1+' me2='+this.me2);
+    if (apDebug>1) console.log('bonus='+bonus+' me1='+this.me1+' me2='+this.me2);
     if (this.con) this.dp2.aptBonus(this.dp1,bonus-(this.me1-this.me2));
     this.notifyIfChanged(true);
   } else {
@@ -954,16 +1004,17 @@ DesignModel.prototype.getState2 = function () {
 DesignModel.prototype.getState1 = function () {
   // finally, notify viewers
   this.got = null;
+  this.snippet = '';
   if (!apStub) {
     this.dp1 = new DotPlotShape(this.apc,this.seq,null,null);
     this.ns1 = this.apc.fold(this.seq);
-    if (apDebug>0) console.log('ns1: '+this.ns1)
+    if (apDebug>1) console.log('ns1: '+this.ns1);
     this.me1 = this.apc.energy_of_structure(this.seq,this.ns1);
     this.getState2();
   } else if (!this.X2) {
     this.apc.pullstates(this.seq,this.mtf,this.setStates.bind(this));
   } else {
-    console.log('old style...');
+    if(apDebug>0) console.log('old style...');
     this.apc.pull2states(this.seq,this.con,this.apc.bonus,this.setStates.bind(this));
     //this.apc.pullstate(this.seq,null,this.setState1.bind(this));
   }
@@ -971,11 +1022,11 @@ DesignModel.prototype.getState1 = function () {
 
 // look for multiple instances of common aptamers and make constraint strings
 DesignModel.prototype.findSites = function (seq,sites) {
-  if (apDebug>0) console.log('findSites('+seq+')');
+  if (apDebug>1) console.log('findSites('+seq+')');
   for (var n=0; n<sites.length; n++) {
     var site = sites[n];
     if (seq.match(site.S1) && site.S2==undefined) {
-      console.log('found '+site.id+' site')
+      if (apDebug>1) console.log('found '+site.id+' site')
       this.siteid = site.id;
       var re1 = RegExp(site.S1,'g');
       var m1 = [];
@@ -987,7 +1038,7 @@ DesignModel.prototype.findSites = function (seq,sites) {
       }
       return carr;
     } else if (site.S2 && seq.match(site.S1) && seq.match(site.S2)) {
-      console.log('found '+site.id+' site')
+      if (apDebug>1) console.log('found '+site.id+' site')
       this.siteid = site.id;
       var re1 = RegExp(site.S1,'g');
       var m1 = [];
@@ -1040,11 +1091,11 @@ DesignModel.prototype.bestSite = function (seq,sites,on) {
 // a motif string looks like: 'GAGGAUAU_AGAAGGC,(......(_).....),-4.00'
 DesignModel.prototype.findMotif = function (seq,sites,bonus) {
   bonus = bonus || '-4.00';
-  if (apDebug>0) console.log('findMotif('+seq+')');
+  if (apDebug>1) console.log('findMotif('+seq+')');
   for (var n=0; n<sites.length; n++) {
     var s = sites[n];
     if (seq.match(s.S1) && s.S2==undefined) {
-      console.log('found '+s.id+' site')
+      if (apDebug>1) console.log('found '+s.id+' site')
       this.siteid = s.id;
       return s.M1+','+(s.B ? s.B : bonus);
     } else if (s.S2 && seq.match(s.S1) && seq.match(s.S2)) {
@@ -1052,14 +1103,14 @@ DesignModel.prototype.findMotif = function (seq,sites,bonus) {
       var carr = [];
       var re1 = RegExp(s.S1+'....*'+s.S2);
       if (seq.match(re1)) {
-        console.log('found '+s.id+' site')
+        if (apDebug>1) console.log('found '+s.id+' site')
         this.X2 = s.X2 ? s.X2 : false;
         return s.M1+','+(s.B ? s.B : bonus);
       }
       if (apDebug>1) console.log('fail '+re1);
       var re2 = RegExp(s.S2+'....*'+s.S1);
       if (seq.match(re2)) {
-        console.log('found '+s.id+'REV site')
+        if (apDebug>1) console.log('found '+s.id+'REV site')
         this.X2 = s.X2 ? s.X2 : false;
         return s.M2+','+(s.B ? s.B : bonus);
       }
@@ -1090,9 +1141,10 @@ DesignModel.prototype.minEnergy = function (sites) {
 }
 
 // (re)compute the apt, con and rep sites/strings
-DesignModel.prototype.resite = function () {
+DesignModel.prototype.resite = function (best) {
+  best = best || false;
   // single aptamers for the moment
-  this.apt = (this.got ?
+  this.apt = (best ?
               this.bestSite(this.seq,apAptamers,true) :
               this.findSite(this.seq,apAptamers));
   this.mtf = this.findMotif(this.seq,apAptamers,this.apc.bonus);
@@ -1101,14 +1153,14 @@ DesignModel.prototype.resite = function () {
   this.setval('apt',this.apt);
   this.setval('mtf',this.mtf);
   this.con = this.toViennaCons(this.apt);
-  if (apDebug>0) console.log('mtf: '+this.mtf)
+  if (apDebug>1) console.log('mtf: '+this.mtf)
   if (apDebug>1) console.log('con: '+this.con)
   this.setval('con',this.con);
-  this.rep = (this.got ?
+  this.rep = (best ?
               this.bestSite(this.seq,apReporters,false) :
               this.findSite(this.seq,apReporters));
   this.repid = (this.rep ? this.siteid : '');
-  if (apDebug>0) console.log('rep: '+this.rep)
+  if (apDebug>1) console.log('rep: '+this.rep)
   this.setval('rep',this.rep);
 }
 
@@ -1116,13 +1168,20 @@ DesignModel.prototype.resite = function () {
 DesignModel.prototype.recompute = function () {
   this.apc.bonus = Number(this.apc.getval('bonus')||-4.00);
   this.apc.setval('bonus',this.apc.bonus);
-  this.resite();
+  this.got = null;
+  this.ns1 = null; // mfe (natural) shape str for state 1
+  this.ns2 = null; // mfe (natural) shape str for state 2
+  this.ns1s = null;
+  this.ns2s = null;
+  this.rep = null; // reporter site 
+  this.apt = null; // aptamer site for state2
+  this.resite(false);
   this.getState1();
 }
 
 // set the sequence and recompute NS, MFE, DP, etc.
 DesignModel.prototype.setseq = function (seq) {
-  console.log('setseq: '+seq);
+  if (apDebug>1) console.log('setseq: '+seq);
   if (seq) {
     this.seq = seq;
     if (!this.apc.frozen) {
@@ -1164,8 +1223,10 @@ function DesignView(apc,model) {
       myView.recompute();
       myView.draw(apc.vp.ctx);
       apc.vp.valid = false;
-      if (this.footnote && this.model.got==this.footseq) this.addFootnote();
-      else if (this.autolike && this.model.got==this.likeseq) this.addLike();
+      if (this.footnote && this.footseq && this.model.got==this.footseq)
+        this.addFootnote();
+      else if (this.autolike && this.likeseq && this.model.got==this.likeseq)
+        this.addLike();
     }
   }
   if (model) model.addInterest(this,this.changed.bind(this));
@@ -1217,13 +1278,13 @@ DesignView.prototype.addFootnote = function() {
   this.footcount = this.footcount + 1;
   this.footseq = null;
   if (this.footnote && this.footcount<this.footmax) {
-    console.log('addFootnote '+this.footcount+" "+this.seq);
+    if (apDebug>1) console.log('addFootnote '+this.footcount+" "+this.seq);
     setTimeout(this.nextFootnote.bind(this), 500);
   } else if (this.footnote) {
-    console.log('addFootnote end '+this.footcount+'/'+this.footnotes.length);
+    if (apDebug>1) console.log('addFootnote end '+this.footcount+'/'+this.footnotes.length);
     var f = this.footnotes.join('<br/>');
-    console.log('size='+f.length);
-    apById("SnapDiv").innerHTML=f;
+    if (apDebug>1) console.log('size='+f.length);
+    apById("SnapDiv").innerHTML='<br/>'+f;
     this.footnotes = [];
     this.footnote = false;
   }
@@ -1237,10 +1298,10 @@ DesignView.prototype.nextFootnote = function() {
   if (n<=designs.length && this.footcount<this.footmax) {
     apById("SnapDiv").innerHTML=[this.footcount+1," of ",this.footmax].join('');
     if (n>0) {
-      this.footrow = designs[n-1];
+      this.footrow = designs[n-1][0];
       apById('count').innerText = designs.length.toString();
       var seq = designs[n-1][0];
-      console.log('nextFootnote '+n+" "+seq);
+      if (apDebug>1) console.log('nextFootnote '+n+" "+seq);
       if (seq && this.model) {
         this.footseq = seq;
         this.model.setseq(seq);
@@ -1248,40 +1309,99 @@ DesignView.prototype.nextFootnote = function() {
       }
     }
   } else if (this.footnote) {
-    console.log('nextFootnote end '+this.footcount+'/'+this.footnotes.length);
+    if (apDebug>1) console.log('nextFootnote end '+this.footcount+'/'+this.footnotes.length);
     var f = this.footnotes.join('<br/>');
-    console.log('size='+f.length);
-    apById("SnapDiv").innerHTML=f;
+    //console.log('size='+f.length);
+    apById("SnapDiv").innerHTML='<br/>'+f;
     this.footnotes = [];
     this.footnote = false;
   }
 }
 
+var apOPS = {
+  '=': function(a,b) {return a==b; },
+  '==': function(a,b) {return a==b; },
+  '>=': function(a,b) {return a>=b; },
+  '>': function(a,b) {return a>b; },
+  '<=': function(a,b) {return a<=b; },
+  '<': function(a,b) {return a<b; },
+  '!=': function(a,b) {return a!=b; },
+  '!': function(a,b) {return false; }
+};
+
+DesignView.prototype.parseCheck = function(s) {
+  var re3 = /^([^<=>!]+)([<=>!~]+)(.+)/;
+  var m3 = s.match(re3);
+  if (!m3) return ['false','!',false];
+  var val = m3[3];
+  var mv = val.match(/^([-+\.\deE]+)([%]?)$/);
+  if (mv) {
+    val = Number(mv[1]);
+    if (mv[2]=='%') val = val/100.0;
+  }
+  if (apDebug>0) console.log(['check',m3[1],m3[2],val].join(' '));
+  return [m3[1],m3[2],val]; 
+}
+
 DesignView.prototype.startAutolike = function() {
   this.autolike = true;
+  this.checks = [
+    ['minRon','>=',0.5],
+    ['maxRx','>=',10],
+    ['minAon','>=',0.5],
+    ['maxAx','>=',2],
+  ];
+  var checkstr = this.apc.getval('like');
+  if (checkstr=='true') {
+    this.checks==[];
+  } else if (checkstr) {
+     var terms = checkstr.split(/[, ] */);
+     this.checks = [];
+     for (var i=0 ; i<terms.length; i++) {
+        this.checks.push(this.parseCheck(terms[i]));
+     }
+  }
+  if(apDebug>0) console.log(this.checks.join('\n'));
   this.likenotes = [];
   this.nextLike();
 } 
 
 DesignView.prototype.likeable = function() {
-  return this.model.doAutoLike();
+  var like = true;
+  for (i=0; i<this.checks.length; i++) {
+    var check = this.checks[i];
+    var metric = this.model.metrics[check[0]] || 0.0;
+    var op = apOPS[check[1]] || apOPS['!'];
+    var val = check[2];
+    var rval = op(metric,val);
+    if (apDebug>0) console.log(check[0]+check[1]+val+' '+rval);
+    if (!rval) like = false;
+  }
+  this.like = like;
+  return this.model.snippet;
 }
 
 DesignView.prototype.addLike = function() {
   var snippet = this.likeable();
   this.likenotes.push(snippet);
-  console.log('addLike '+this.likenotes.length);
+  if (apDebug>1) console.log('addLike '+this.likenotes.length);
   this.apc.showLike(this.like);
   index = Number(this.apc.getval('index') || '0');
+  var designs = this.apc.parseDesigns(this.apc.getval('Notes'));
+  var n = Math.min(designs.length,Math.max(1,index));
+  if (n>0) {
+    designs[n-1][2] = this.like.toString();
+    this.apc.setNotes(designs);
+  }
   this.apc.setval('index',index+1);
   this.likeseq = null;
   if (this.autolike) {
-    setTimeout(this.nextLike.bind(this), 500);
+    setTimeout(this.nextLike.bind(this), 200);
   } else if (this.footnote) {
-    console.log('addLike end '+this.likenotes.length);
+    if (apDebug>1) console.log('addLike end '+this.likenotes.length);
     var f = this.likenotes.join('<br/>');
-    console.log('size='+f.length);
-    apById("SnapDiv").innerHTML=f;
+    if (apDebug>1) console.log('size='+f.length);
+    apById("SnapDiv").innerHTML=apMetrics+'<br/>'+f;
     this.likenotes = [];
     this.autolike = false;
   }
@@ -1291,24 +1411,24 @@ DesignView.prototype.addLike = function() {
 DesignView.prototype.nextLike = function() {
   index = Number(this.apc.getval('index') || '0');
   var designs = this.apc.parseDesigns(this.apc.getval('Notes'));
-  n = Math.max(1,index);
+  var n = Math.max(1,index);
   if (n<=designs.length) {
     apById("SnapDiv").innerHTML=[n+1," of ",designs.length].join('');
     if (n>0) {
-      this.footrow = designs[n-1];
+      this.footrow = designs[n-1][0];
       apById('count').innerText = designs.length.toString();
       var seq = designs[n-1][0];
-      console.log('nextLike '+n+" "+seq);
+      if (apDebug>1) console.log('nextLike '+n+" "+seq);
       if (seq && this.model) {
         this.likeseq = seq;
         this.model.setseq(seq);
       }
     }
   } else if (this.autolike) {
-    console.log('nextLike end '+n+'/'+designs.length);
+    if (apDebug>1) console.log('nextLike end '+n+'/'+designs.length);
     var f = this.likenotes.join('<br/>');
-    console.log('size='+f.length);
-    apById("SnapDiv").innerHTML=f;
+    if (apDebug>1) console.log('size='+f.length);
+    apById("SnapDiv").innerHTML=apMetrics+'<br/>'+f;
     this.likenotes = [];
     this.autolike = false;
   }
@@ -1347,7 +1467,7 @@ DesignView.prototype.rescale = function (w,h) {
 
 DesignView.prototype.fitWithin = function (x,y,w,h) {
   if (apDebug>1) {
-    console.log("DesignView.fitWithin: x="+x+" y="+y+" w="+w+" h="+h);
+    if (apDebug>1) console.log("DesignView.fitWithin: x="+x+" y="+y+" w="+w+" h="+h);
   }
   x = x || 0;
   y = y || 0;
@@ -1661,20 +1781,26 @@ DesignModel.prototype.pairstats = function(x,y) {
 
 DesignModel.prototype.doLikeXY = function (selX, selY, on, isrep ) {
   var m = this.metrics;
-  //console.log("doLikeXY: selX="+selX+" sely="+selY);
   var ps = this.pairstats( selX, selY );
+  if (apDebug>1) console.log("doLikeXY: x="+selX+" y="+selY+' on='+on+' '+ps.join(','));
   if (!isrep) {
     // aptamer
-    m['minAN'] = Math.min(ps[1],m['minAN'])
-    m['maxAX'] = Math.max(ps[2],m['maxAX'])
+    m.minAon = Math.min(ps[1],m.minAon);
+    m.minAoff = Math.min(ps[0],m.minAoff);
+    m.maxAx = Math.max(ps[2],m.maxAx);
+    m.minAx = Math.min(ps[2],m.minAx);
   } else if (on) {
     // same state (on=2)
-    m['minRN'] = Math.min(ps[1],m['minRN'])
-    m['maxRX'] = Math.max(ps[2],m['maxRX'])
+    m.minRon = Math.min(ps[1],m.minRon);
+    m.minRoff = Math.min(ps[0],m.minRoff);
+    m.maxRx = Math.max(ps[2],m.maxRx);
+    m.minRx = Math.min(ps[2],m.minRx);
   } else {
     // exclusion
-    m['minRN'] = Math.min(ps[0],m['minRN'])
-    m['maxRX'] = Math.max(ps[3],m['maxRX'])
+    m.minRon = Math.min(ps[0],m.minRon);
+    m.minRoff = Math.min(ps[1],m.minRoff);
+    m.maxRx = Math.max(ps[3],m.maxRx);
+    m.minRx = Math.min(ps[3],m.minRx);
   }
 }
 
@@ -1702,24 +1828,99 @@ DesignModel.prototype.doLikeCons = function (con,on,isrep) {
   }
 }
 
-// sets this.like
-DesignModel.prototype.doAutoLike = function () {
+var apMetrics =
+  "seq, minAoff, minAon, minAx, maxAx, minRoff, minRon, minRx, maxRx, mfe1, mfe2, dFE, bonus, same, pp1, pp2, d1, d2";
+
+// compute the "dirty" estimator for state 1
+DesignModel.prototype.dirty1 = function (p1) {
+  p1 = p1 || 0.99;
+  var p2 = 1-p1;
+  if(apDebug>0) console.log('dirty1 p1='+p1+' p2='+p2);
+  this.ns1s = this.ns1s || new ConstrainShape(this.apc,this.ns1);
+  this.ns2s = this.ns2s || new ConstrainShape(this.apc,this.ns2);
+  var pp = this.dp1.pprows;
+  var m1 = this.ns1s.match;
+  var m2 = this.ns2s.match;
+  var ep = 0;
+  var sum = 0;
+  for (var r=1; r<pp.length; r++) {
+    for (var c=r+1; c<pp.length; c++) {
+      if (m1[r-1]==c) ep = ((m2[r-1]==c) ? 1 : p1);
+      else if (m2[r-1]==c) ep = p2;
+      else ep=0;
+      var d = (ep-pp[r][c]);
+      sum = sum + d*d;
+      if (this.dlogging && d!=0.0)
+         this.dlog.push([r,c,ep,pp[r][c],d*d,m1[r-1],m2[r-1]]);
+    }
+  }
+  return sum/pp.length;
+}
+
+// compute the "dirty" estimator for state 2
+DesignModel.prototype.dirty2 = function (p2) {
+  p2 = p2 || 0.01;
+  var p1 = 1-p2;
+  if(apDebug>0) console.log('dirty2 p1='+p1+' p2='+p2);
+  this.ns1s = this.ns1s || new ConstrainShape(this.apc,this.ns1);
+  this.ns2s = this.ns2s || new ConstrainShape(this.apc,this.ns2);
+  var pp = this.dp1.pprows;
+  var m1 = this.ns1s.match;
+  var m2 = this.ns2s.match;
+  var ep = 0;
+  var sum = 0;
+  for (var r=1; r<pp.length; r++) {
+    for (var c=1; c<r; c++) {
+      if (m1[r-1]==c) ep = ((m2[r-1]==c) ? 1 : p1);
+      else if (m2[r-1]==c) ep = p2;
+      else ep=0;
+      var d = (ep-pp[r][c]);
+      sum = sum + d*d;
+      if (this.dlogging && d!=0.0)
+         this.dlog.push([r,c,ep,pp[r][c],d*d,m1[r-1],m2[r-1]]);
+    }
+  }
+  return sum/pp.length;
+}
+
+// sets this.metrics
+DesignModel.prototype.doMetrics = function () {
   this.like = true;
-  var m = this.metrics || {
-    'minAN': 1.0,
-    'maxAX': 0.0,
-    'minRN': 1.0,
-    'maxRX': 0.0,
+  var m = {
+    'seq': this.seq,
+    'minAoff': 1.0,
+    'minAon': 1.0,
+    'minAx': 1e9,
+    'maxAx': 0.0,
+    'minRoff': 1.0,
+    'minRon': 1.0,
+    'minRx': 1e9,
+    'maxRx': 0.0,
+    'mfe1': this.me1,
+    'mfe2': this.me2,
+    'dFE': this.me1-this.me2,
+    'bonus': this.apc.bonus || -4,
+    'same': (this.on ? 1 : 0),
   };
   this.metrics = m;
   var apt = this.apt;
   if (apt) this.doLikeCons(apt,true,false);
-  if (apDebug>1) console.log('reporter '+(this.on ? 'ON' : 'OFF'));
+  if (apDebug>0) console.log('reporter '+(this.on ? 'ON' : 'OFF'));
   var rep = this.rep;
   if (rep) this.doLikeCons(rep,this.on,true);
-  var snippet = ['minAN=',m.minAN,' maxAX=',m.maxAX,
-              ' minRN=',m.minRN,' maxRX=',m.maxRX].join('');
-  console.log(snippet);
+  m.pp1 = Number(this.apc.getval('pp1')||(this.on ? 1-m.minRoff : m.minRon));
+  m.pp2 = Number(this.apc.getval('pp2')||(this.on ? m.minRon : 1-m.minRoff));
+  m.d1 = this.dirty1(m.pp1);
+  m.d2 = this.dirty2(m.pp2);
+  var snippet = [m.seq, m.minAoff.toFixed(3), m.minAon.toFixed(3), 
+                 m.minAx.toFixed(3), m.maxAx.toFixed(3),
+                 m.minRoff.toFixed(3), m.minRon.toFixed(3),
+                 m.minRx.toFixed(3), m.maxRx.toFixed(3),
+                 m.mfe1.toFixed(3), m.mfe2.toFixed(3),
+                 m.dFE.toFixed(2), m.bonus,m.same,
+                 m.pp1.toFixed(6), m.pp2.toFixed(6),
+                 m.d1.toFixed(6), m.d2.toFixed(6)].join(', ');
+  if (apDebug>0) console.log(snippet);
   return snippet;
 }
 
@@ -1727,7 +1928,7 @@ DesignModel.prototype.doAutoLike = function () {
 APState.prototype.update = function (name,after) {
   var a = this.delta.a || {};
   var b = this.delta.b || {};
-  console.log("update("+name+")="+after);
+  if (apDebug>1) console.log("update("+name+")="+after);
   if ( !(name in b) ) {
      if (name=='seq') b[name] = this.dm.seq || '';
      else b[name] = this.getval(name) || '';
@@ -1749,7 +1950,7 @@ APState.prototype.commit = function() {
   if ('a' in this.delta) {
     for (var ab in this.delta) {
       for (var k in this.delta[ab]) {
-        console.log("commit: "+ab+"["+k+"]="+this.delta[ab][k]);
+        if (apDebug>1) console.log("commit: "+ab+"["+k+"]="+this.delta[ab][k]);
       }
     }
     this.undo.push(this.delta);
@@ -1763,7 +1964,7 @@ APState.prototype.commit = function() {
 APState.prototype.abort = function () {
   var b = this.delta.b || {};
   for (var name in b) {
-    console.log("abort: b["+k+"]="+b[k]);
+    if (apDebug>1) console.log("abort: b["+k+"]="+b[k]);
     this.setval(name,b[name]);
   }
   this.delta = {};
@@ -1794,7 +1995,7 @@ APState.prototype.doUndo = function () {
     var delta = this.undo.pop() || {};
     for (var ab in delta) {
       for (var k in delta[ab]) {
-        console.log("undo: "+ab+"["+k+"]="+delta[ab][k]);
+        if (apDebug>1) console.log("undo: "+ab+"["+k+"]="+delta[ab][k]);
       }
     }
     if ('b' in delta) {
@@ -1819,20 +2020,20 @@ APState.prototype.fixseq = function (seq) {
 }
 
 DesignView.prototype.doSeqSubst = function (c,n) {
-  console.log("DesignView.doSubst: c="+c+" n="+n);
+  if (apDebug>1) console.log("DesignView.doSubst: c="+c+" n="+n);
   var s = this.seq || '';
-  console.log("DesignView.doSubst: s="+s);
+  if (apDebug>1) console.log("DesignView.doSubst: s="+s);
   if (n>0 && s.length>=(n+c.length-1)) {
     var s2 = s.slice(0,n-1) + c + s.slice(n+c.length-1)
     s2 = this.apc.fixseq(s2);
     this.seq = s2;
-    console.log('DesignView.doSeqSubst: '+this.seq);
+    if (apDebug>1) console.log('DesignView.doSeqSubst: '+this.seq);
     if (s2!=s) {
       this.apc.update('seq',s2);
     }
     return s!=s2;
   } else {
-    console.log('DesignView.doSeqSubst: misaligned')
+    if (apDebug>1) console.log('DesignView.doSeqSubst: misaligned')
   }
   return false;
 }
@@ -1857,7 +2058,7 @@ function apInvert(s) {
   var o = new Array()
   for (var i = 0, len = s.length; i <= len; i++)
     o.push(sub[s.charAt(len - i)] || s.charAt(len - i));
-  if (apDebug>0) console.log('apInvert('+s+')='+o.join(''));
+  if (apDebug>1) console.log('apInvert('+s+')='+o.join(''));
   return o.join('');
 }
 
@@ -1865,7 +2066,7 @@ DesignView.prototype.doChain = function (op, selX, selY, action, color) {
   color = color || (action=='click' ? '#00ff00' : '#ff0000')
   if (action=='shift-click') action='click';
   if (apDebug>1)
-    console.log("DesignView.doChain: selX="+selX+" "+this.basename(selX))
+    if (apDebug>1) console.log("DesignView.doChain: selX="+selX+" "+this.basename(selX))
   var seq = this.model.seq;
   var ns1 = this.ns1;
   var ns2 = this.ns2;
@@ -1922,7 +2123,7 @@ DesignView.prototype.doChain = function (op, selX, selY, action, color) {
     } else {
       if (action=='click') this.doMarkStateXY(base, 0, 1, color);
     }
-    console.log(desc)
+    if (apDebug>1) console.log(desc)
     return desc;
   }
   return null;
@@ -1930,7 +2131,7 @@ DesignView.prototype.doChain = function (op, selX, selY, action, color) {
 
 DesignView.prototype.doOpXY = function (op, selX, selY, action) {
   action = action || 'click';
-  console.log("DesignView.doOpXY: selX="+selX+" sely="+selY)
+  if (apDebug>1) console.log("DesignView.doOpXY: selX="+selX+" sely="+selY)
   var seq = this.model.seq;
   if (selX>0 && selX<=seq.length && selY>=0 || selY<=seq.length) {
     if (['a','c','g','u','/'].includes(op)) {
@@ -1945,7 +2146,7 @@ DesignView.prototype.doOpXY = function (op, selX, selY, action) {
       }
       if (changed) {
         this.model.setseq(this.seq);
-        if (apDebug>0) console.log('new: '+this.model.seq);
+        if (apDebug>1) console.log('new: '+this.model.seq);
         this.apc.commit();
         this.recompute();
       }
@@ -2001,7 +2202,7 @@ DesignView.prototype.recompute = function () {
       this.rep = new ConstrainShape(this.apc,model.rep);
       this.ns1 = new ConstrainShape(this.apc,model.ns1);
       this.ns2 = new ConstrainShape(this.apc,model.ns2);
-      this.on = model.doRepOnOff();
+      this.on = model.on;
       if (apDebug>1) console.log('reporter '+(this.on ? 'ON' : 'OFF'));
       model.valid = true;
     }
@@ -2364,7 +2565,7 @@ DesignView.prototype.doMutate = function () {
 DesignView.prototype.doMutateN = function () {
   if (apDebug>1) console.log("DesignView.doMutateN");
   var bases = this.markedBases();
-  if (apDebug>0) console.log('marked: '+bases.join(','));
+  if (apDebug>1) console.log('marked: '+bases.join(','));
   var seq = this.model.seq;
   this.apc.saveSeq(seq,true);
   if (bases.length<=4) return this.doMutateBases(seq,bases);
@@ -2376,7 +2577,7 @@ DesignView.prototype.doMutateN = function () {
 DesignView.prototype.doMutateP = function () {
   if (apDebug>1) console.log("DesignView.doMutateP");
   var bases = this.markedPairs();
-  if (apDebug>0) console.log('marked: '+bases.join(','));
+  if (apDebug>1) console.log('marked: '+bases.join(','));
   var seq = this.model.seq;
   this.apc.saveSeq(seq,true);
   if (bases.length<=8) return this.doMutatePairs(seq,bases);
@@ -2472,7 +2673,7 @@ DesignView.prototype.drawMatch = function(ctx,m1,up,c) {
 DesignView.prototype.drawMatches = function(ctx,m1,m2,up) {
   up = up || 1;
   if (m2 && m2.length!=m1.length) {
-    console.log("drawMatches: length mismatch: "+m1.length+"!="+m2.length);
+    if (apDebug>0) console.log("drawMatches: length mismatch: "+m1.length+"!="+m2.length);
     ms = m1;
   }
   m2 = m2 || m1;
@@ -2546,7 +2747,7 @@ DotPlotShape.prototype.merge = function (dp2) {
   var nbins2 = this.apc.nbins2 || 4;
   var maxbin = nbins2-1;
   var binsize = this.binsize || 1;
-  console.log('nbins2='+nbins2+' maxbin='+maxbin+' binsize='+binsize);
+  if (apDebug>1) console.log('nbins2='+nbins2+' maxbin='+maxbin+' binsize='+binsize);
   var bonds = [];
   for (var r=0; r<this.pprows.length-1; r++) {
     var row1 = this.pprows[r];
@@ -2567,7 +2768,7 @@ DotPlotShape.prototype.merge = function (dp2) {
     }
   }
   bonds.sort(function(a, b){return b[2] - a[2]});
-  console.log('merge: bonds.length='+bonds.length);
+  if (apDebug>0) console.log('merge: bonds.length='+bonds.length);
   return bonds;
 }
 
@@ -2658,7 +2859,7 @@ DesignView.prototype.drawNodes = function (ctx) {
 
 DesignView.prototype.draw = function (ctx) {
   ctx = ctx || this.apc.vp.ctx;
-  if (apDebug>0) console.log('draw: '+this.seq)
+  if (apDebug>1) console.log('draw: '+this.seq)
   //this.drawNatural(ctx);
   if (this.view=='natural') this.drawNatural(ctx);
   else if (this.view=='states') this.drawDotPlot(ctx,null,true);
@@ -2670,12 +2871,11 @@ DesignView.prototype.draw = function (ctx) {
 
 DesignView.prototype.snippet = function () {
   var row = this.footrow || [];
-  if (apDebug>0) console.log('snippet: '+this.seq)
+  if (apDebug>1) console.log('snippet: '+this.seq)
   var data = this.apc.canvas.toDataURL("image/png");
   var parts = ['<img src="'+data+'"/>', this.asLink(this.asArcplotURL())];
   if (row&&row[0]!=this.seq) {
-    console.log('OOO in snippet');
-    parts.push('OUT OF ORDER?!');
+    if (apDebug>0) console.log('OOO in snippet');
   }
   var gameurl = this.asGameURL(row);
   if (gameurl) parts.push(this.asLink(gameurl));
@@ -2708,7 +2908,7 @@ APState.prototype.doClick = function() {
   // Hold off the script timeout for an hour.
   apDefer();
   // Click button callback
-  if (apDebug>0) console.log("doClick");
+  if (apDebug>1) console.log("doClick");
   this.getState();
   this.text = this.text + " click";
   this.setState();
@@ -2807,22 +3007,22 @@ APState.prototype.pairing_probabilities = function (seq,constr) {
 }
 
 APState.prototype.getprob = function(seq,con,cb) {
-  if (apDebug>0) console.log('getprob: seq='+seq);
-  if (apDebug>0 && con) console.log('getprob: con='+con);
+  if (apDebug>1) console.log('getprob: seq='+seq);
+  if (apDebug>1 && con) console.log('getprob: con='+con);
   var xhr = new XMLHttpRequest();
   var path = "/spp?seq="+seq+(con ? "&con="+con : "");
   xhr.open("GET", path, true);
   xhr.onload = function (e) {
     if (xhr.readyState === 4) {
       if (xhr.status === 200) {
-        console.log(xhr.responseText);
+        if (apDebug>1) console.log(xhr.responseText);
       } else {
-        console.error(xhr.statusText);
+        if (apDebug>0) console.error(xhr.statusText);
       }
     }
   };
   xhr.onerror = function (e) {
-    console.error(xhr.statusText);
+    if (apDebug>0) console.error(xhr.statusText);
   };
   xhr.send(null);
 }
@@ -2849,7 +3049,7 @@ APState.prototype.parseState = function(txt,cb) {
     res.ns = lines[1][0].slice(1);
     res.plis = lines.slice(2);
   } else {
-    console.log("parseState: lines[0]="+lines[0]);
+    if (apDebug>0) console.log("parseState: lines[0]="+lines[0]);
     res.plis = [];
     res.seq = "";
     res.con = null;
@@ -2876,12 +3076,12 @@ APState.prototype.pullstates = function(seq,mtf,cb) {
       if (xhr.status === 200) {
         myState.parse2states(xhr.responseText,cb);
       } else {
-        console.error(xhr.statusText);
+        if (apDebug>0) console.error(xhr.statusText);
       }
     }
   };
   xhr.onerror = function (e) {
-    console.error(xhr.statusText);
+    if (apDebug>0) console.error(xhr.statusText);
   };
   xhr.send(null);
 }
@@ -2889,9 +3089,9 @@ APState.prototype.pullstates = function(seq,mtf,cb) {
 // return the mfe, shape, and pairing probabilities to a callback
 APState.prototype.pull2states = function(seq,con,bonus,cb) {
   var bonus = this.bonus || -4.0;
-  if (apDebug>0) console.log('pull2states: seq='+seq);
-  if (apDebug>0 && con) console.log('pull2states: con='+con);
-  if (apDebug>0) console.log('pull2states: bonus='+bonus);
+  if (apDebug>1) console.log('pull2states: seq='+seq);
+  if (apDebug>1 && con) console.log('pull2states: con='+con);
+  if (apDebug>1) console.log('pull2states: bonus='+bonus);
   var xhr = new XMLHttpRequest();
   var path = "/spp?seq="+seq+(con?"&con="+con:"")+"&bonus="+bonus;
   if (apDebug>1) console.log('path='+path);
@@ -2902,12 +3102,12 @@ APState.prototype.pull2states = function(seq,con,bonus,cb) {
       if (xhr.status === 200) {
         myState.parse2states(xhr.responseText,cb);
       } else {
-        console.error(xhr.statusText);
+        if (apDebug>0) console.error(xhr.statusText);
       }
     }
   };
   xhr.onerror = function (e) {
-    console.error(xhr.statusText);
+    if (apDebug>0) console.error(xhr.statusText);
   };
   xhr.send(null);
 }
@@ -2926,12 +3126,12 @@ APState.prototype.pullstate = function(seq,con,cb) {
       if (xhr.status === 200) {
         myState.parseState(xhr.responseText,cb);
       } else {
-        console.error(xhr.statusText);
+        if (apDebug>0) console.error(xhr.statusText);
       }
     }
   };
   xhr.onerror = function (e) {
-    console.error(xhr.statusText);
+    if (apDebug>0) console.error(xhr.statusText);
   };
   xhr.send(null);
 }
@@ -2961,7 +3161,7 @@ APState.prototype.parse2states = function(txt,cb) {
     res.ns2 = lines[2][0];
     res.plis = lines.slice(3);
   } else {
-    console.log("parseState: lines[0]="+lines[0]);
+    if (apDebug>1) console.log("parseState: lines[0]="+lines[0]);
     res.seq = "";
     res.mtf = null;
     res.ns = "";
@@ -2977,7 +3177,7 @@ APState.prototype.doStyle = function(style) {
   // Hold off the script timeout for an hour.
   style = style || 'next';
   this.getState();
-  if (apDebug>0) console.log("doStyle("+style+")");
+  if (apDebug>1) console.log("doStyle("+style+")");
   if (style=='next') {
     if (this.dv.style=='arc') style='dot';
     else if (this.dv.style=='dot') style='grid';
@@ -3019,7 +3219,7 @@ APState.prototype.parseDesigns = function (notes) {
   designs = notes.split(/\n/);
   if (designs.length>0 && designs[designs.length-1].length==0) designs.pop();
   for (var i=0; i<designs.length; i++) {
-     var row = designs[i].split(',');
+     var row = designs[i].split(/, */);
      if (row.length<2) row.push(this.mutation(row[0])); 
      if (row.length<3) row.push('true');
      designs[i] = row;
@@ -3029,25 +3229,25 @@ APState.prototype.parseDesigns = function (notes) {
 
 // doMutate button callback
 APState.prototype.doMutate = function() {
-  if (apDebug>0) console.log("mutate");
+  if (apDebug>1) console.log("mutate");
   if (this.dv) this.dv.doMutate();
 }
 
 // doMutateN button callback
 APState.prototype.doMutateN = function() {
-  if (apDebug>0) console.log("mutateN");
+  if (apDebug>1) console.log("mutateN");
   if (this.dv) this.dv.doMutateN();
 }
 
 // doMutateP button callback
 APState.prototype.doMutateP = function() {
-  if (apDebug>0) console.log("mutateP");
+  if (apDebug>1) console.log("mutateP");
   if (this.dv) this.dv.doMutateP();
 }
 
 // doBase button callback
 APState.prototype.doBase = function() {
-  if (apDebug>0) console.log("base");
+  if (apDebug>1) console.log("base");
   if (this.dm && this.dm.seq) {
     this.getconf();
     this.base = this.dm.seq;
@@ -3058,7 +3258,7 @@ APState.prototype.doBase = function() {
 
 // doUnbase button callback
 APState.prototype.doUnbase = function() {
-  if (apDebug>0) console.log("unbase");
+  if (apDebug>1) console.log("unbase");
   if (this.dm && this.dm.seq) {
     this.getconf();
     this.base = null;
@@ -3084,12 +3284,12 @@ APState.prototype.setLike = function(like) {
   index = Number(this.getval('index') || '0');
   var designs = this.parseDesigns(this.getval('Notes'));
   var n = Math.min(designs.length,Math.max(1,index));
-  if (apDebug>0) console.log("like "+n+" of "+designs.length);
+  if (apDebug>1) console.log("like "+n+" of "+designs.length);
   if (n>0 && n<=designs.length) {
     this.getconf();
     designs[n-1][2] = like.toString();
     this.setNotes(designs);
-    if (apDebug>0) console.log("like "+like+' '+n);
+    if (apDebug>1) console.log("like "+like+' '+n);
     this.showLike(like);
   }
 }
@@ -3109,10 +3309,10 @@ APState.prototype.doDrop = function() {
   index = Number(this.getval('index') || '0');
   var designs = this.parseDesigns(this.getval('Notes'));
   var n = Math.min(designs.length,Math.max(1,index));
-  if (apDebug>0) console.log("drop "+n+" of "+designs.length);
+  if (apDebug>1) console.log("drop "+n+" of "+designs.length);
   if (n>0 && n<=designs.length) {
     var dropped = designs.splice(n-1,1);
-    if (apDebug>0) console.log("dropped "+dropped);
+    if (apDebug>1) console.log("dropped "+dropped);
     if (n>designs.length) n=designs.length;
     this.setval('index',n);
     this.setNotes(designs);
@@ -3126,12 +3326,12 @@ APState.prototype.doPrune = function() {
   index = Number(this.getval('index') || '0');
   var designs = this.parseDesigns(this.getval('Notes'));
   var n = Math.min(designs.length,Math.max(1,index));
-  if (apDebug>0) console.log("purge "+designs.length);
+  if (apDebug>1) console.log("purge "+designs.length);
   for (var i=designs.length-1; i>=0; i--) {
     var row = designs[i];
     if (row.length>=3 && row[2]=='false') {
       designs.splice(i,1);
-      if (apDebug>0) console.log('drop '+i+' '+row);
+      if (apDebug>1) console.log('drop '+i+' '+row);
     } else if (apDebug>1) console.log('keep '+i+' '+row);
     if (i<n) n--;
   }
@@ -3251,7 +3451,7 @@ APState.prototype.doGoto = function(n) {
   if (apDebug>1) console.log("goto("+n+")");
   var designs = this.parseDesigns(this.getval('Notes'));
   n = Math.min(designs.length,Math.max(1,index));
-  if (apDebug>0) console.log("goto "+n+" of "+designs.length);
+  if (apDebug>1) console.log("goto "+n+" of "+designs.length);
   if (n>0) {
     this.setval('index',n);
     var seq = designs[n-1][0];
@@ -3291,7 +3491,7 @@ APState.prototype.mutation = function(seq) {
     }
   }
   var mod = diff.join('+');
-  if (apDebug>0) console.log('mod='+mod);
+  if (apDebug>1) console.log('mod='+mod);
   return mod;
 }
 
@@ -3323,10 +3523,10 @@ APState.prototype.saveSeq = function(seq,check,index) {
       if (!check || !this.hasSeq(designs,seq)) {
         if (!index || index<0 || index>=designs.length) designs.push(row);
         else designs.splice(index,0,row);
-        if (apDebug>0) console.log("save "+row);
+        if (apDebug>1) console.log("save "+row);
         this.setNotes(designs);
       } else if (apDebug>1) {
-        console.log('dup: '+seq)
+        if(apDebug>1) console.log('dup: '+seq)
       }
       this.setconf();
     }
@@ -3337,7 +3537,7 @@ APState.prototype.doView = function(view) {
   // Hold off the script timeout for an hour.
   view = view || 'next';
   this.getState();
-  if (apDebug>0) console.log("doView("+view+")");
+  if (apDebug>1) console.log("doView("+view+")");
   if (view=='next') {
     if (this.dv.view=='natural') view='dotplot';
     else if (this.dv.view=='dotplot') view='states';
@@ -3374,7 +3574,7 @@ APState.prototype.doPull = function(cb) {
   apDefer();
   this.autosync = false;
   this.getState(true);
-  if (apDebug>0) console.log("doPull");
+  if (apDebug>1) console.log("doPull");
   if (this.dm) {
     this.dm.setseq( this.seq );
   }
@@ -3389,7 +3589,7 @@ APState.prototype.doPush = function(cb) {
   apDefer();
   this.autosync = false;
   this.getState();
-  if (apDebug>0) console.log("doPush");
+  if (apDebug>1) console.log("doPush");
   if (this.dm) {
     this.set_sequence_string(this.dm.seq);
   }
@@ -3416,7 +3616,7 @@ APState.prototype.doUnmark = function(cb) {
   // Hold off the script timeout for an hour.
   apDefer();
   this.getState();
-  if (apDebug>0) console.log("doUnmark");
+  if (apDebug>1) console.log("doUnmark");
   if (this.dv) {
     this.dv.doUnmark();
     this.setval('op','.');
@@ -3430,7 +3630,7 @@ APState.prototype.doChain = function(cb) {
   // Hold off the script timeout for an hour.
   apDefer();
   this.getState();
-  if (apDebug>0) console.log("doChain");
+  if (apDebug>1) console.log("doChain");
   if (this.dv) {
     this.dv.doUnmark();
     this.setval('op','*');
@@ -3444,7 +3644,7 @@ APState.prototype.doAutoMark = function(cb) {
   // Hold off the script timeout for an hour.
   apDefer();
   this.getState();
-  if (apDebug>0) console.log("doAutoMark");
+  if (apDebug>1) console.log("doAutoMark");
   if (this.dv) {
     this.dv.automark = true;
     this.dv.recompute();
@@ -3457,7 +3657,7 @@ APState.prototype.doAutoMark = function(cb) {
 // Wait until the APState state machine is in state "done"
 // before executing the specified function 
 APState.prototype.whenReadyDo = function( func ) {
-  console.log( "(whenReadyDo) this = " + this );
+  if(apDebug>1) console.log( "(whenReadyDo) this = " + this );
   if (apc.fsm == "done") {
     //func.prototype.call(this);
     func.call( apc );
@@ -3479,7 +3679,7 @@ APState.prototype.activateCBs = function() {
   // next line is async applet magic - leave unchanged
   apDefer();
   if (apButtons.length==0) {
-    console.log(apBoosterTitle+": button callbacks activated");
+    if(apDebug>1) console.log(apBoosterTitle+": button callbacks activated");
     this.fsm = 'done';
     this.canvas = apById('canvas');
     if (this.canvas) console.log('got canvas!')
@@ -3499,11 +3699,11 @@ APState.prototype.activateCBs = function() {
     var name2 = apButtons[apButtons.length-1];
     if (apDebug>1) console.log("activateCBs: name2="+name2);
     apById(name2).addEventListener('click',apActivations[name2].bind(this) );
-    if (apDebug>0) console.log( name2+" activated" );
+    if (apDebug>1) console.log( name2+" activated" );
     apButtons.pop();
     apPollNextState( this.activateCBs.bind(this), 20 );
   } else {
-    if (apDebug>0) console.log("activateCBs: wait on "+name);
+    if (apDebug>1) console.log("activateCBs: wait on "+name);
     apPollNextState( this.activateCBs.bind(this), 500 );
   }
 }
@@ -3581,17 +3781,17 @@ function apGetUrlParameter(name) {
     name = name.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
     var regex = new RegExp('[\\?&]' + name + '=([^&#]*)');
     var results = regex.exec(window.location.toString());
-    console.log('query: '+window.location.toString());
+    if(apDebug>1) console.log('query: '+window.location.toString());
     var val = (results === null ?
                '' :
                decodeURIComponent(results[1].replace(/\+/g, ' ')));
-    if (apDebug>0) console.log('query['+name+']='+val);
+    if (apDebug>1) console.log('query['+name+']='+val);
     return val;
 };
 
 function init() {
   if (!apInstalled) {
-  console.log("before html");
+  if(apDebug>1) console.log("before html");
     // Create the html for the flash applet container plus Plot elements
     apBodyAppend([
       '<div id=', apBoosterDivName, ' style="margin: auto;">',
@@ -3657,7 +3857,7 @@ function init() {
         '<div id="',apId('SnapDiv'),'">','</div>\n',
       '</div>'].join('')
     );
-    console.log('html appended')
+    if(apDebug>1) console.log('html appended')
     if (!apStub) {
       //$(function() {
       //  $(apBoosterDivSelector).accordion({
@@ -3666,9 +3866,9 @@ function init() {
       //});
       //console.log("accordian")
       $(apBoosterDivSelector)[0].scrollIntoView(false);
-      console.log("scrollIntoView")
+      if(apDebug>1) console.log("scrollIntoView")
     }
-    console.log("buttons:"+apButtons.toString());
+    if(apDebug>1) console.log("buttons:"+apButtons.toString());
   }
   apInstalled = true;
   if (apStub) {
