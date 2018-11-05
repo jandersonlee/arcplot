@@ -1,14 +1,26 @@
+Network Ports and Firewalls
+
+    Be sure that the port you have chosen to use (80/8888) is open in
+    your firewall. If using port 80 you may need to run using sudo.
+    If using port 8888 (the default) you may need to tweak your firewall.
+
+
 Installation
 
 The default is to run more-or-less in place. You will need to install
 nodejs and a few other packages in order to run the simple webserver.
 On Ubuntu systems this may look something like:
 
+    sudo apt-get install -y git
+    curl -sL https://deb.nodesource.com/setup_11.x | sudo -E bash -
     sudo apt-get install -y build-essential
-    sudo apt-get install -y nodejs nodejs-dev
-    npm install md5
-    cd nodejs/
-    ./runsubopt.sh
+    sudo apt-get install -y nodejs
+    sudo npm install md5
+
+    git clone https://github.com/jandersonlee/arcplot.git
+    cd arcplot/nodejs/
+    ./runsubopt.sh  # if using default port 8888
+    # sudo ./runsubopt.sh 80 # if using port 80 as root
 
 
 Main Files and Directories
