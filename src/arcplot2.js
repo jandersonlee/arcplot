@@ -1,4 +1,6 @@
 // to minimize global namespace pollution use "ap" or "AP" prefix
+// v1.7: added / to display of fixed bases
+// v1.6: added 'B' and included metrics and like icon in footnotes
 // v1.5: d1/d2 bugfix plus 'd' 'D' and 'M' commands
 // v1.4: autolike
 // v1.3: add bestSites to find best binding aptamer site
@@ -11,7 +13,7 @@
 // v0.6: dependency chain operations
 // v0.5: more Sync and AutoMark fixes
 var apPrefix = "AP";
-var APversion = 1.5;
+var APversion = 1.7;
 function apId(id) { return apPrefix+id; }
 function byId(id) { return document.getElementById(id); }
 function apById(id) { return byId(apId(id)); }
@@ -771,6 +773,9 @@ ViewPort.prototype.onkeypress = function(e) {
   } else if (op=='k') {
     this.apc.doLike();
     this.apc.onNext();
+  } else if (op=='B') {
+    if(apDebug>0) console.log('startbonus');
+    this.apc.dv.startBonus();
   } else if (op=='F') {
     if(apDebug>0) console.log('footnote');
     this.apc.dv.startFootnotes();
@@ -980,7 +985,8 @@ DesignModel.prototype.setStates = function (res) {
   this.resite(true);
   this.on = this.doRepOnOff();
   this.got = res.seq;
-  this.snippet = this.doMetrics();
+  this.metricsCsv = this.doMetrics();
+  this.snippet = this.seq+','+this.metricsCsv;
   this.notifyIfChanged(true);
 }
 
@@ -1166,7 +1172,6 @@ DesignModel.prototype.resite = function (best) {
 
 // recompute the shapes, mfe, pairing probabilities, etc.
 DesignModel.prototype.recompute = function () {
-  this.apc.bonus = Number(this.apc.getval('bonus')||-4.00);
   this.apc.setval('bonus',this.apc.bonus);
   this.got = null;
   this.ns1 = null; // mfe (natural) shape str for state 1
@@ -1180,8 +1185,9 @@ DesignModel.prototype.recompute = function () {
 }
 
 // set the sequence and recompute NS, MFE, DP, etc.
-DesignModel.prototype.setseq = function (seq) {
-  if (apDebug>1) console.log('setseq: '+seq);
+DesignModel.prototype.setseq = function (seq,bonus) {
+  this.apc.bonus = bonus || Number(this.apc.getval('bonus')||-4.00);
+  if (apDebug>1) console.log('setseq: '+seq+' '+bonus);
   if (seq) {
     this.seq = seq;
     if (!this.apc.frozen) {
@@ -1225,6 +1231,8 @@ function DesignView(apc,model) {
       apc.vp.valid = false;
       if (this.footnote && this.footseq && this.model.got==this.footseq)
         this.addFootnote();
+      else if (this.bonusflag && this.footseq && this.model.got==this.footseq)
+        this.addBonus();
       else if (this.autolike && this.likeseq && this.model.got==this.likeseq)
         this.addLike();
     }
@@ -1238,6 +1246,7 @@ DesignView.prototype.startFootnotes = function() {
   this.footmax = 100;
   this.footnotes = [];
   this.footnote = true;
+  this.startChecks();
   this.nextFootnote();
 } 
 
@@ -1279,7 +1288,7 @@ DesignView.prototype.addFootnote = function() {
   this.footseq = null;
   if (this.footnote && this.footcount<this.footmax) {
     if (apDebug>1) console.log('addFootnote '+this.footcount+" "+this.seq);
-    setTimeout(this.nextFootnote.bind(this), 500);
+    setTimeout(this.nextFootnote.bind(this), 200);
   } else if (this.footnote) {
     if (apDebug>1) console.log('addFootnote end '+this.footcount+'/'+this.footnotes.length);
     var f = this.footnotes.join('<br/>');
@@ -1298,7 +1307,7 @@ DesignView.prototype.nextFootnote = function() {
   if (n<=designs.length && this.footcount<this.footmax) {
     apById("SnapDiv").innerHTML=[this.footcount+1," of ",this.footmax].join('');
     if (n>0) {
-      this.footrow = designs[n-1][0];
+      this.footrow = designs[n-1];
       apById('count').innerText = designs.length.toString();
       var seq = designs[n-1][0];
       if (apDebug>1) console.log('nextFootnote '+n+" "+seq);
@@ -1315,6 +1324,59 @@ DesignView.prototype.nextFootnote = function() {
     apById("SnapDiv").innerHTML='<br/>'+f;
     this.footnotes = [];
     this.footnote = false;
+  }
+}
+
+DesignView.prototype.startBonus = function() {
+  this.curbonus = 0.0;
+  this.maxbonus = Number(this.apc.getval('bonus')||-4.00);
+  this.footnotes = [];
+  this.bonusflag = true;
+  this.footseq = null;
+  this.model.got = null;
+  this.startChecks();
+  if (apDebug>0) console.log('startBonus '+this.curbonus+" "+this.maxbonus);
+  this.nextBonus();
+} 
+
+DesignView.prototype.addBonus = function() {
+  this.likeable();
+  var icon = this.apc.showLike(this.like);
+  var snippet = this.snippet();
+  this.footnotes.push(snippet);
+  this.footseq = null;
+  this.curbonus = Math.round(this.curbonus*10.0 - 1)/10.0;
+  if (this.bonusflag && this.curbonus>=this.maxbonus) {
+    if (apDebug>0) console.log('addBonus '+this.curbonus+" "+this.seq);
+    setTimeout(this.nextBonus.bind(this), 200);
+  } else if (this.bonusflag) {
+    if (apDebug>0) console.log('addBonus end');
+    var f = this.footnotes.join('<br/>');
+    apById("SnapDiv").innerHTML='<br/>'+f;
+    this.footnotes = [];
+    this.bonusflag = false;
+  }
+} 
+
+// nextBonus callback
+DesignView.prototype.nextBonus = function() {
+  if (apDebug>0) console.log('nextBonus '+this.curbonus+" "+this.seq);
+  if (this.bonusflag && this.curbonus>=this.maxbonus) {
+    this.apc.bonus = this.curbonus;
+    apById("SnapDiv").innerHTML=this.curbonus.toString();
+    this.footrow = [];
+    var seq = this.seq;
+    if (apDebug>0) console.log('nextBonus '+this.curbonus+" "+seq);
+    if (seq && this.model) {
+      this.footseq = seq;
+      this.model.setseq(seq,this.curbonus);
+    }
+  } else if (this.bonusflag) {
+    if (apDebug>0) console.log('nextBonus end');
+    var f = this.footnotes.join('<br/>');
+    apById("SnapDiv").innerHTML='<br/>'+f;
+    this.footnotes = [];
+    this.bonusflag = false;
   }
 }
 
@@ -1343,8 +1405,7 @@ DesignView.prototype.parseCheck = function(s) {
   return [m3[1],m3[2],val]; 
 }
 
-DesignView.prototype.startAutolike = function() {
-  this.autolike = true;
+DesignView.prototype.startChecks = function() {
   this.checks = [
     ['minRon','>=',0.5],
     ['maxRx','>=',10],
@@ -1362,11 +1423,17 @@ DesignView.prototype.startAutolike = function() {
      }
   }
   if(apDebug>0) console.log(this.checks.join('\n'));
+} 
+
+DesignView.prototype.startAutolike = function() {
+  this.startChecks();
+  this.autolike = true;
   this.likenotes = [];
   this.nextLike();
 } 
 
 DesignView.prototype.likeable = function() {
+  if (!this.checks) this.startChecks();
   var like = true;
   for (i=0; i<this.checks.length; i++) {
     var check = this.checks[i];
@@ -1415,7 +1482,7 @@ DesignView.prototype.nextLike = function() {
   if (n<=designs.length) {
     apById("SnapDiv").innerHTML=[n+1," of ",designs.length].join('');
     if (n>0) {
-      this.footrow = designs[n-1][0];
+      this.footrow = designs[n-1];
       apById('count').innerText = designs.length.toString();
       var seq = designs[n-1][0];
       if (apDebug>1) console.log('nextLike '+n+" "+seq);
@@ -1587,6 +1654,16 @@ DesignView.prototype.pairnote = function(x,y,n) {
     if (n.length>0) note += ' ' + n;
   }
   return basepair+' '+note+'<br/>';
+}
+
+DesignView.prototype.renote3 = function(x,y) {
+  var note3 = [
+    '',
+    apMetricsBase,
+    this.model.metricsCsv
+    ].join('<br/>');
+  this.note3 = note3;
+  apById('note3').innerHTML = note3;
 }
 
 DesignView.prototype.renote2 = function(x,y) {
@@ -1828,14 +1905,16 @@ DesignModel.prototype.doLikeCons = function (con,on,isrep) {
   }
 }
 
-var apMetrics =
-  "seq, minAoff, minAon, minAx, maxAx, minRoff, minRon, minRx, maxRx, mfe1, mfe2, dFE, bonus, same, pp1, pp2, d1, d2";
+var apMetricsBase =
+  "minAoff, minAon, minAx, maxAx, minRoff, minRon, minRx, maxRx, mfe1, mfe2, dFE, bonus, same, pp1, pp2, d1, d2";
+
+var apMetrics = "seq, "+apMetricsBase
 
 // compute the "dirty" estimator for state 1
 DesignModel.prototype.dirty1 = function (p1) {
   p1 = p1 || 0.99;
   var p2 = 1-p1;
-  if(apDebug>0) console.log('dirty1 p1='+p1+' p2='+p2);
+  if(apDebug>1) console.log('dirty1 p1='+p1+' p2='+p2);
   this.ns1s = this.ns1s || new ConstrainShape(this.apc,this.ns1);
   this.ns2s = this.ns2s || new ConstrainShape(this.apc,this.ns2);
   var pp = this.dp1.pprows;
@@ -1861,7 +1940,7 @@ DesignModel.prototype.dirty1 = function (p1) {
 DesignModel.prototype.dirty2 = function (p2) {
   p2 = p2 || 0.01;
   var p1 = 1-p2;
-  if(apDebug>0) console.log('dirty2 p1='+p1+' p2='+p2);
+  if(apDebug>1) console.log('dirty2 p1='+p1+' p2='+p2);
   this.ns1s = this.ns1s || new ConstrainShape(this.apc,this.ns1);
   this.ns2s = this.ns2s || new ConstrainShape(this.apc,this.ns2);
   var pp = this.dp1.pprows;
@@ -1905,14 +1984,14 @@ DesignModel.prototype.doMetrics = function () {
   this.metrics = m;
   var apt = this.apt;
   if (apt) this.doLikeCons(apt,true,false);
-  if (apDebug>0) console.log('reporter '+(this.on ? 'ON' : 'OFF'));
+  if (apDebug>1) console.log('reporter '+(this.on ? 'ON' : 'OFF'));
   var rep = this.rep;
   if (rep) this.doLikeCons(rep,this.on,true);
   m.pp1 = Number(this.apc.getval('pp1')||(this.on ? 1-m.minRoff : m.minRon));
   m.pp2 = Number(this.apc.getval('pp2')||(this.on ? m.minRon : 1-m.minRoff));
   m.d1 = this.dirty1(m.pp1);
   m.d2 = this.dirty2(m.pp2);
-  var snippet = [m.seq, m.minAoff.toFixed(3), m.minAon.toFixed(3), 
+  var snippet = [m.minAoff.toFixed(3), m.minAon.toFixed(3), 
                  m.minAx.toFixed(3), m.maxAx.toFixed(3),
                  m.minRoff.toFixed(3), m.minRon.toFixed(3),
                  m.minRx.toFixed(3), m.maxRx.toFixed(3),
@@ -1920,7 +1999,7 @@ DesignModel.prototype.doMetrics = function () {
                  m.dFE.toFixed(2), m.bonus,m.same,
                  m.pp1.toFixed(6), m.pp2.toFixed(6),
                  m.d1.toFixed(6), m.d2.toFixed(6)].join(', ');
-  if (apDebug>0) console.log(snippet);
+  if (apDebug>1) console.log(snippet);
   return snippet;
 }
 
@@ -2010,12 +2089,13 @@ APState.prototype.doUndo = function () {
 }
 
 APState.prototype.fixseq = function (seq) {
-  var fix = this.getval('fix');
+  var fix = this.getval('fix') || null;
   if (!fix || !seq || fix.length!=seq.length) return seq;
   var aseq = seq.split('');
   for (var i=0; i<aseq.length; i++) {
     if (fix[i]!='-') aseq[i] = fix[i];
   }
+  this.fix = fix;
   return aseq.join('');
 }
 
@@ -2189,6 +2269,7 @@ DesignView.prototype.doOp = function (op, mx, my, action) {
 }
 
 DesignView.prototype.recompute = function () {
+  this.fix = this.apc.getval('fix') || null;
   var model = this.model;
   if (model) {
     if (model.seq!=this.seq || true) {
@@ -2238,6 +2319,7 @@ DesignView.prototype.drawBondGrid = function (ctx,nx,ny,up,color,colory) {
   if ((up>0 && nx<ny) || (up<0 && nx>ny)) {
     var t = nx; nx = ny; ny=t;
   }
+  ctx.beginPath();
   ctx.fillStyle = color;
   if (nx>0 && ny>0) {
     if (up>0) { // nx>ny
@@ -2248,6 +2330,7 @@ DesignView.prototype.drawBondGrid = function (ctx,nx,ny,up,color,colory) {
       ctx.fillRect(x+nx*scale+2,y+ny*scale+3,(ny-nx-1)*scale-2,boxsiz-3);
     }
   }
+  ctx.stroke();
 }
 
 DesignView.prototype.drawBondDot = function (ctx,nx,ny,up,color,colory) {
@@ -2258,8 +2341,10 @@ DesignView.prototype.drawBondDot = function (ctx,nx,ny,up,color,colory) {
   if ((up>0 && nx<ny) || (up<0 && nx>ny)) {
     var t = nx; nx = ny; ny=t;
   }
+  ctx.beginPath();
   ctx.fillStyle = color;
   ctx.fillRect(x+nx*scale+1,y+ny*scale+1,boxsiz,boxsiz);
+  ctx.stroke();
 }
 
 DesignView.prototype.drawBondRing = function(ctx,nx,ny,dir,color,colory,lw) {
@@ -2290,19 +2375,24 @@ DesignView.prototype.drawNodeDot = function(ctx,num,c) {
   var model = this.model || {};
   var scale = this.scale;
   var boxsiz = this.boxsiz;
+  var x0 = x+num*scale+1;
+  var y0 = y+num*scale+1;
+  ctx.beginPath();
   ctx.fillStyle = colorForC(c);
-  ctx.fillRect(x+num*scale+1,y+num*scale+1,boxsiz,boxsiz);
+  ctx.fillRect(x0,y0,boxsiz,boxsiz);
   if (model.sel && model.sel.length>0 && model.sel[num-1]!='-') {
     //console.log('sel='+model.sel);
     ctx.strokeStyle = "#000000";
     ctx.lineWidth = 2;
-    ctx.strokeRect(x+num*scale+1,y+num*scale+1,boxsiz,boxsiz);
+    ctx.strokeRect(x0,y0,boxsiz,boxsiz);
   }
   if (this.fix && this.fix[num-1]!='-') {
-    ctx.strokeStyle = "#00C0C0";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x+num*scale+1,y+num*scale+1,boxsiz,boxsiz);
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = Math.round(this.boxsiz/20)+2;
+    ctx.moveTo(x0,y0+boxsiz);
+    ctx.lineTo(x0+boxsiz,y0);
   }
+  ctx.stroke();
 }
 
 DesignView.prototype.drawNodeArc = function(ctx,num,c) {
@@ -2321,6 +2411,15 @@ DesignView.prototype.drawNodeArc = function(ctx,num,c) {
   if (this.hasMarkXY(num,num)) {
     this.drawMarkArc(ctx,num,num);
   }
+  if (this.fix && this.fix[num-1]!='-') {
+    ctx.beginPath();
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = Math.round(this.radius/20)+2;
+    var dr = this.radius/2.828;
+    ctx.moveTo(x-dr,y+dr);
+    ctx.lineTo(x+dr,y-dr);
+    ctx.stroke();
+  }
 }
 
 DesignView.prototype.drawNodeRing = function(ctx,num,c) {
@@ -2331,6 +2430,7 @@ DesignView.prototype.drawNodeRing = function(ctx,num,c) {
   //console.log('drawNodeRing('+c+num+')')
   ctx.beginPath();
   //console.log('drawNodeRing('+c+num+') x='+x+' y='+y+' r='+this.radius)
+  if(apDebug>0) console.log('drawNodeRing: arc')
   ctx.arc(x,y,this.radius,0,2.0*Math.PI);
   ctx.fillStyle = colorForC(c);
   ctx.fill();
@@ -2339,6 +2439,15 @@ DesignView.prototype.drawNodeRing = function(ctx,num,c) {
   ctx.stroke();
   if (this.hasMarkXY(num,num)) {
     this.drawMarkNode(ctx,num,num);
+  }
+  if (this.fix && this.fix[num-1]!='-') {
+    ctx.beginPath();
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = Math.round(this.radius/20)+2;
+    var dr = this.radius/1.414;
+    ctx.moveTo(x-dr,y+dr);
+    ctx.lineTo(x+dr,y-dr);
+    ctx.stroke();
   }
 }
 
@@ -2359,9 +2468,9 @@ DesignView.prototype.drawMarkArc = function(ctx,sx,sy,c) {
   var dy = (sy-sx)/2.0
   var y = this.y + this.h/2 + dy*dt;
   var model = this.model || {};
+  ctx.beginPath();
   ctx.strokeStyle = c;
   ctx.lineWidth = 2;
-  ctx.beginPath();
   ctx.arc(x,y,this.radius/2,0,2.0*Math.PI);
   ctx.stroke();
   var up = (sx>sy?1:-1);
@@ -2377,9 +2486,11 @@ DesignView.prototype.drawMarkDot = function(ctx,sx,sy,c) {
   var model = this.model || {};
   var scale = this.scale;
   var boxsiz = this.boxsiz;
+  ctx.beginPath();
   ctx.strokeStyle = c;
   ctx.lineWidth = 1;
   ctx.strokeRect(x+sx*scale+1,y+sy*scale+1,boxsiz,boxsiz);
+  ctx.stroke();
 }
 
 DesignView.prototype.drawMarkRing = function(ctx,nx,ny,color) {
@@ -2866,14 +2977,19 @@ DesignView.prototype.draw = function (ctx) {
   else this.drawDotPlot(ctx,this.apc.compare,false);
   this.renote1();
   this.renote2();
+  this.renote3();
   if (apDebug>1) console.log('drawn: '+this.seq)
 }
 
 DesignView.prototype.snippet = function () {
+  if (!this.checks) this.startChecks();
   var row = this.footrow || [];
   if (apDebug>1) console.log('snippet: '+this.seq)
+  if (apDebug>1) console.log('snippet row: '+row)
+  this.likeable();
+  var icon = this.apc.showLike(this.like);
   var data = this.apc.canvas.toDataURL("image/png");
-  var parts = ['<img src="'+data+'"/>', this.asLink(this.asArcplotURL())];
+  var parts = ['<img src="'+data+'"/>'+icon, this.asLink(this.asArcplotURL())];
   if (row&&row[0]!=this.seq) {
     if (apDebug>0) console.log('OOO in snippet');
   }
@@ -2882,6 +2998,10 @@ DesignView.prototype.snippet = function () {
   if (row&&row.length>3) parts.push(row.slice(3).join(','));
   parts.push(this.note2);
   parts.push(this.note1);
+  if (this.model.metricsCsv) {
+    parts.push(apMetricsBase);
+    parts.push(this.model.metricsCsv);
+  }
   return parts.join('<br/>');
 }
 
@@ -3275,6 +3395,7 @@ APState.prototype.showLike = function(like) {
   else if (like==true) html='&#x1F44D;';
   else if (like==false) html='&#x1F44E;';
   byId("like").innerHTML = html;
+  return html;
 }
 
 // set/reset like
