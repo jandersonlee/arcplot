@@ -1,7 +1,7 @@
 // to avoid global namespace pollution use "ap" or "AP" prefix
+// v0.4: add Sync and AutoMark fixes
 var apPrefix = "AP";
 var APversion = 0.3;
-var APsid = 8977097; // must match script Drupal id
 function apId(id) { return apPrefix+id; }
 function byId(id) { return document.getElementById(id); }
 function apById(id) { return byId(apId(id)); }
@@ -61,10 +61,10 @@ var apAptamers = [
    'S2': '.CCCUUGGCAGC.',
    'C2': '))...)))...))'},
   {'id': 'Tetracycline',
-   'S1': 'UAAAACAUACC',
-   'C1': '((.......((',
-   'S2': 'GGAGAGGUGAAGAAUACGACCACCUA',
-   'C2': '))...((((...........))))))'}
+   'S1': '.UAAAACAUACC',
+   'C1': '((........((',
+   'S2': 'GGAGAGGUGAAGAAUACGACCACCUA.',
+   'C2': '))..(((((...........)))))))'}
 ];
 
 // a list of reporter sites to recognize
@@ -181,6 +181,7 @@ function APState() {
   this.index = 0;
   this.fsm = "done";
   this.frozen = false;
+  this.autosync = true;
   this.applet = document.getElementById('maingame');
   // for dragging
   this.dragging = false;
@@ -233,6 +234,7 @@ function APState() {
   };
 
   this.getState = function(pullseq) {
+    pullseq = pullseq || this.autosync;
     if (apDebug>1) console.log("enter getState");
     this.getconf();
     if (pullseq) this.seq = this.get_sequence_string();
@@ -245,6 +247,7 @@ function APState() {
   };
 
   this.setState = function(pushseq) {
+    pushseq = pushseq || this.autosync;
     // called to reset the Plot state after an operation
     if (apDebug>0) { console.log("enter setState"); }
     if (this.seq && this.seq != this.get_sequence_string()) {
@@ -278,6 +281,11 @@ function rnd2(n,lpad) {
   while (!sn2.match(/\.../)) sn2 = sn2.concat('0');
   while (sn2.length < lpad) sn2 = ' '.concat(sn2);
   return sn2;
+}
+
+function apPadH(s,n) {
+  while (s.length < n) s = s.concat(' ');
+  return s.replace(/ /g, '&nbsp;');
 }
 
 function rnd2html(n,lpad) {
@@ -536,6 +544,7 @@ function ViewPort(apc,canvas) {
       console.log('mouseover');
       canvas.focus({preventScroll: true});
       if (myVP.onmouseover) return myVP.onmouseover(e);
+      if (myVP.apc.autosync) return myVP.apc.onSync();
     }, true);
     canvas.addEventListener('mouseleave', function(e) {
       // kludge: grab the keyboard focus whenever the window is entered
@@ -763,6 +772,7 @@ DesignModel.prototype.findSites = function (seq,sites) {
     var site = sites[n];
     if (seq.match(site.S1) && site.S2==undefined) {
       console.log('found '+site.id+' site')
+      this.siteid = site.id;
       var re1 = RegExp(site.S1,'g');
       var m1 = [];
       var m = re1.exec(seq);
@@ -774,6 +784,7 @@ DesignModel.prototype.findSites = function (seq,sites) {
       return carr;
     } else if (site.S2 && seq.match(site.S1) && seq.match(site.S2)) {
       console.log('found '+site.id+' site')
+      this.siteid = site.id;
       var re1 = RegExp(site.S1,'g');
       var m1 = [];
       var m = re1.exec(seq);
@@ -819,6 +830,7 @@ DesignModel.prototype.resite = function () {
   if (!apStub && this.apts.length>1) {
     this.apt = this.minEnergy(this.apts);
   } else this.apt = this.findSite(this.seq,apAptamers);
+  this.aptid = (this.apt ? this.siteid : '');
   if (apDebug>1) console.log('apt: '+this.apt)
   this.setval('apt',this.apt);
   this.con = this.toViennaCons(this.apt);
@@ -829,6 +841,7 @@ DesignModel.prototype.resite = function () {
   if (!apStub && this.reps.length>1) {
     this.rep = this.minEnergy(this.reps);
   } else this.rep = this.findSite(this.seq,apReporters);
+  this.repid = (this.rep ? this.siteid : '');
   if (apDebug>1) console.log('rep: '+this.rep)
   this.setval('rep',this.rep);
 }
@@ -844,6 +857,9 @@ DesignModel.prototype.setseq = function (seq) {
   if (seq) {
     this.seq = seq;
     if (!this.apc.frozen) {
+      if (this.apc.autosync) {
+        if (seq!=this.apc.seq) this.apc.set_sequence_string(seq);
+      }
       this.recompute();
       this.notifyIfChanged(true);
     }
@@ -859,6 +875,7 @@ function DesignView(apc,model) {
   // for the moment, default to natural mode
   this.style = 'arc';
   this.view = 'states';
+  this.automark = true;
   var myView = this;
   this.changed = function (model) {
     myView.valid = false;
@@ -883,6 +900,16 @@ DesignView.prototype.contains = function(mx, my) {
   // All we have to do is make sure the Mouse X,Y fall inside
   return (this.x <= mx) && (this.y <= my) &&
          ((this.x + this.w)> mx) && ((this.y + this.h)>my);
+}
+
+// Determine if a pair is the apt or rep
+DesignView.prototype.inXY = function(sx,sy) {
+  if (apDebug>0) console.log('inXY sx='+sx+' sy='+sy)
+  var apt = this.apt;
+  if (apt && apt.match[sx-1]==sy) return this.model.aptid;
+  var rep = this.rep;
+  if (rep && rep.match[sx-1]==sy) return this.model.repid;
+  return '';
 }
 
 DesignView.prototype.rescale = function (w,h) {
@@ -987,29 +1014,33 @@ DesignView.prototype.pairdoc = function(x,y,name,dp) {
   return this.pairdoc2(x,y,name,dp)[0];
 }
 
-DesignView.prototype.pairnote = function(x,y) {
+DesignView.prototype.pairnote = function(x,y,n) {
   var note = "";
-  var basepair = this.pairname(x,y);
+  n = n || '';
+  var basepair = apPadH(this.pairname(x,y), 8);
   var model = this.model || {};
   if (model.dp1) {
-    var pd1 = this.pairdoc2(x,y,"DP1",model.dp1);
+    var pd1 = this.pairdoc2(x,y,"S1",model.dp1);
     if (model.dp2 && model.dp1!=this.dp2) {
-      var pd2 = this.pairdoc2(x,y,"DP2",model.dp2);
-      if (pd1[0].length>0 && pd2[0].length>0) note = pd1[0]+" "+pd2[0];
-      else if (pd1[0].length>0 || pd2[0].length>0) note = pd1[0]+pd2[0];
+      var pd2 = this.pairdoc2(x,y,"S2",model.dp2);
+      var p1 = pd1[1];
+      var p2 = pd2[1];
+      if (pd1[0].length>0 && pd2[0].length>0) note = '| '+pd1[0]+' | '+pd2[0];
+      else if (pd1[0].length>0 || pd2[0].length>0) note = '| '+pd1[0]+pd2[0];
       if (note.length==0) note='';
-      else if (pd2[1]==pd1[1]) {
-        note += " static";
+      else if (p2==p1 || (p2<p1*1.05 && p1<p2*1.05)) {
+        note += " | static";
       } else if (pd2[1]>pd1[1]) {
 	// ON
-        note += " &nbsp;ON "+(pd1[1]>0.0?rnd2html(pd2[1]/pd1[1]):'inf')+'x';
+        note+=" | ON&nbsp "+(pd1[1]>0.0?rnd2html(pd2[1]/pd1[1]):'inf')+'x';
       } else {
         // OFF
-        note += " OFF "+(pd2[1]>0.0?rnd2html(pd1[1]/pd2[1]):'inf')+'x';
+        note+=" | OFF "+(pd2[1]>0.0?rnd2html(pd1[1]/pd2[1]):'inf')+'x';
       }
     } else {
       note = pd1[0];
     }
+    if (n.length>0) note += ' ' + n;
   }
   return basepair+' '+note+'<br/>';
 }
@@ -1026,7 +1057,7 @@ DesignView.prototype.renote1 = function(x,y) {
   var notes = [];
   for (var i=0; i<keys.length; i++) {
     var mark = marks[keys[i]];
-    notes.push(this.pairnote(mark.x,mark.y));
+    notes.push(this.pairnote(mark.x,mark.y,mark.note));
   }
   this.note1 = notes.join('');
   //console.log("note1:\n"+note1);
@@ -1036,6 +1067,7 @@ DesignView.prototype.renote1 = function(x,y) {
 
 DesignView.prototype.doUnmark = function () {
   this.marks = {};
+  this.automark = false;
   this.draw();
   this.renote1();
 }
@@ -1052,36 +1084,79 @@ DesignView.prototype.hasMarkXY = function (selX, selY) {
   return false;
 }
 
-DesignView.prototype.doMarkXY = function (selX, selY, action) {
+DesignView.prototype.doMarkXY = function (selX, selY, note) {
+  note = note || this.inXY(selX,selY);
   var n3 = function(n) { return (n/1000).toFixed(3).slice(2); };
-  console.log("DesignView.doMarkXY: selX="+selX+" sely="+selY)
+  //console.log("DesignView.doMarkXY: selX="+selX+" sely="+selY);
   if (selX==selY) selY = 0;
   if (selX>0 && selX<=this.seq.length && selY>=0 || selY<=this.seq.length) {
     var marks = this.marks || {};
     var tag = (selY==0?n3(selX):n3(selX)+":"+n3(selY));
+    if (apDebug>1) console.log('note='+note);
     if (marks[tag]) delete marks[tag];
-    else marks[tag] = {'x': selX, 'y': selY};
+    else marks[tag] = {'x': selX, 'y': selY, 'note': note};
     this.marks = marks;
     this.valid = false;
     this.renote1();
   }
 }
 
+// see if a reporter seems to turn on or off
+DesignModel.prototype.doRepOnOff = function () {
+  var rep = this.rep;
+  if (!rep || !this.dp1 || !this.dp2) return true;
+  var re2 = /(\-*)([^-]+)(\-+)([^-]+)(\-*)/;
+  var re1 = /(\-*)([^-]+)(\-*)/;
+  var m2 = rep.match(re2);
+  var m1 = rep.match(re1);
+  if (m2) {
+    var x1 = m2[1].length+1;
+    var x2 = m2[1].length+m2[2].length;
+    var y1 = m2[1].length+m2[2].length+m2[3].length+m2[4].length;
+    var y2 = m2[1].length+m2[2].length+m2[3].length+1;
+    var s1 = this.dp1.pprows[x1][y1]*this.dp1.pprows[x2][y2];
+    var s2 = this.dp2.pprows[x1][y1]*this.dp2.pprows[x2][y2];
+    return s2>s1;
+  } else if (m1) {
+    var x1 = m1[1].length+1;
+    var y1 = m1[1].length+m1[2].length;
+    return this.dp2.pprows[x1][y1] > this.dp1.pprows[x1][y1];
+  }
+  return false;
+}
+
 // mark the limits of the strongest aptamer and reporter sites
+DesignView.prototype.doMarkCons = function (con,on,note) {
+  on = on || false;
+  var re2 = /(\-*)([^-]+)(\-+)([^-]+)(\-*)/;
+  var re1 = /(\-*)([^-]+)(\-*)/;
+  var m2 = con.match(re2);
+  var m1 = con.match(re1);
+  if (m2) {
+    var x1 = m2[1].length+1;
+    var x2 = m2[1].length+m2[2].length;
+    var y1 = m2[1].length+m2[2].length+m2[3].length+m2[4].length;
+    var y2 = m2[1].length+m2[2].length+m2[3].length+1;
+    if (!on) { var t=x1; x1=y1; y1=t; t=x2; x2=y2; y2=t; }
+    this.doMarkXY( x1, y1, note );
+    this.doMarkXY( x2, y2, note );
+  } else if (m1) {
+    var x1 = m1[1].length+1;
+    var y1 = m1[1].length+m1[2].length;
+    if (!on) { var t=x1; x1=y1; y1=t; }
+    this.doMarkXY( x1, y1, note );
+  }
+}
+
 DesignView.prototype.doAutoMark = function () {
   this.marks = {};
   var model = this.model;
   if (model) {
     var apt = model.apt;
-    if (apt) {
-      this.doMarkXY( apt.indexOf('(')+1, apt.lastIndexOf(')')+1 );
-      this.doMarkXY( apt.lastIndexOf('(')+1, apt.indexOf(')')+1 );
-    }
+    if (apt) this.doMarkCons(apt,true,model.aptid);
+    if (apDebug>0) console.log('reporter '+(this.on ? 'ON' : 'OFF'));
     var rep = model.rep;
-    if (rep) {
-      this.doMarkXY( rep.indexOf('(')+1, rep.lastIndexOf(')')+1 );
-      this.doMarkXY( rep.lastIndexOf('(')+1, rep.indexOf(')')+1 );
-    }
+    if (rep) this.doMarkCons(rep,this.on,model.repid);
     this.draw();
   }
   this.renote1();
@@ -1234,7 +1309,7 @@ DesignView.prototype.doOp = function (op, mx, my, action) {
   console.log("DesignView.doOp: mx="+mx+" my="+my)
   if (selX>0 && selX<=this.seq.length && selY>=0 || selY<=this.seq.length) {
     if (action=='ctrl-click') {
-      this.doMarkXY(selX,selY,action);
+      this.doMarkXY(selX,selY,null);
       this.draw();
     } else if (action=='click' || action=='shift-click') {
       this.doOpXY(op,selX,selY,action);
@@ -1253,11 +1328,16 @@ DesignView.prototype.recompute = function () {
       this.rescale();
       this.me1 = model.me1;
       this.me2 = model.me2;
+      this.apt = new ConstrainShape(this.apc,model.apt);
+      this.rep = new ConstrainShape(this.apc,model.rep);
       this.ns1 = new ConstrainShape(this.apc,model.ns1);
       this.ns2 = new ConstrainShape(this.apc,model.ns2);
+      this.on = model.doRepOnOff();
+      if (apDebug>0) console.log('reporter '+(this.on ? 'ON' : 'OFF'));
       model.valid = true;
-      this.valid = false;
     }
+    if (this.automark) this.doAutoMark();
+    else this.renote1();
   }
 }
 
@@ -1373,6 +1453,7 @@ DesignView.prototype.drawMarkArc = function(ctx,sx,sy,c) {
   ctx.arc(x,y,this.radius/2,0,2.0*Math.PI);
   ctx.stroke();
   var up = (sx>sy?1:-1);
+  if (apDebug>1) console.log('up='+up);
   this.drawBondArc(ctx,sx,sy,up,c,c,2);
 }
 
@@ -1729,11 +1810,13 @@ DesignModel.prototype.findSite = function(seq,apts) {
     var m1 = (apt.S1 ? seq.match(apt.S1) : null);
     var m2 = (apt.S2 ? seq.match(apt.S2) : null);
     if (apt.S2==undefined && m1) {
-     if (apDebug>1) console.log('found '+apt.id+' site')
-     return this.calcAptamer(seq,m1,null,apt.C1,null);
+      if (apDebug>1) console.log('found '+apt.id+' site')
+      this.siteid = apt.id;
+      return this.calcAptamer(seq,m1,null,apt.C1,null);
     } else if (m1 && m2) {
-     if (apDebug>1) console.log('found '+apt.id+' site')
-     return this.calcAptamer(seq,m1,m2,apt.C1,apt.C2);
+      if (apDebug>1) console.log('found '+apt.id+' site')
+      this.siteid = apt.id;
+      return this.calcAptamer(seq,m1,m2,apt.C1,apt.C2);
     }
   }
   return "";
@@ -1753,6 +1836,7 @@ APState.prototype.set_sequence_string = function (seq) {
   } else if (this.applet) {
     this.applet.set_sequence_string(seq);
   }
+  this.seq = seq;
 }
 
 // return an energy for a seq,shape
@@ -1929,6 +2013,7 @@ APState.prototype.doNatural = function () {
 APState.prototype.doPull = function(cb) {
   // Hold off the script timeout for an hour.
   apDefer();
+  this.autosync = false;
   this.getState(true);
   if (apDebug>0) console.log("doPull");
   if (this.dm) {
@@ -1943,10 +2028,26 @@ APState.prototype.doPull = function(cb) {
 APState.prototype.doPush = function(cb) {
   // Hold off the script timeout for an hour.
   apDefer();
+  this.autosync = false;
   this.getState();
   if (apDebug>0) console.log("doPush");
   if (this.dm) {
     this.set_sequence_string(this.dm.seq);
+  }
+  else console.log('dm='+this.dm)
+  this.setState(true);
+  return null;
+}
+
+// Sync button callback
+APState.prototype.doSync = function(cb) {
+  // Hold off the script timeout for an hour.
+  apDefer();
+  this.autosync = true;
+  this.getState();
+  if (apDebug>0) console.log("doSync");
+  if (this.dm) {
+    this.dm.setseq( this.seq );
   }
   else console.log('dm='+this.dm)
   this.setState(true);
@@ -1974,7 +2075,8 @@ APState.prototype.doAutoMark = function(cb) {
   this.getState();
   if (apDebug>0) console.log("doAutoMark");
   if (this.dv) {
-    this.dv.doAutoMark();
+    this.dv.automark = true;
+    this.dv.recompute();
   }
   else console.log('dm='+this.dm)
   this.setState();
@@ -2044,6 +2146,7 @@ var apActivations = {
   'Dotplots': APState.prototype.doDotplots,
   'Push': APState.prototype.doPush,
   'Pull': APState.prototype.doPull,
+  'Sync': APState.prototype.doSync,
   'Unmark': APState.prototype.doUnmark,
   'AutoMark': APState.prototype.doAutoMark,
 };
@@ -2089,7 +2192,6 @@ function init() {
     apBodyAppend([
       '<div id=', apBoosterDivName, ' style="margin: auto;">',
         '<h3>', apBoosterTitle, '</h3>\n',
-          '<p>',
               'Style: ',
               apButton('Arc'),
               apButton('Dot'),
@@ -2098,13 +2200,15 @@ function init() {
               apButton('Natural'),
               apButton('States'),
               apButton('Dotplots'),
+          '<br/>\n',
               ' Seq: ',
               apButton('Pull'),
               apButton('Push'),
-              ' ',
+              apButton('Sync'),
+              ' Mark: ',
               apButton('Unmark'),
               apButton('AutoMark'),
-         '</p>',
+          '<br/>\n',
         '<div id="',apId('CanvasDiv'),'">',
           '<canvas id="',apId('canvas'),'" width="600" height="600"',
             ' tabindex="1" style="border: 1px solid black;">',
