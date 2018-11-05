@@ -1,0 +1,48 @@
+Installation
+
+The default is to run more-or-less in place. You will need to install
+nodejs and a few other packages in order to run the simple webserver.
+On Ubuntu systems this may look something like:
+
+    sudo apt-get install -y build-essential
+    sudo apt-get install -y nodejs nodejs-dev
+    npm install md5
+    cd nodejs/
+    ./runsubopt.sh
+
+
+Main Files and Directories
+
+bin/                  holds the cgi-bin scripts and binaries
+nodejs/               web server directory
+nodejs/subopt.js      web server script
+nodejs/runsubopt.sh   launch web server script
+nodejs/data/          holds files served by the web server
+
+src/                  source files for javacript code and html files
+tools/                source files for pairing probabilities cgi-bin tools
+
+
+Pairing Probability Tools
+
+The current version of the arcplot tool uses cgi-bin calls to compute
+the pairing probabilities data for the RNA designs. At some future point
+it is hoped that this can be added as an API call within the Eterna game.
+
+The cpp.c (Combined Pairing Probabilites) tool was originally compiled
+against the ViennaRNA-2.4.9 library but should also compile with the
+more recent ViennaRNA-2.4.10. It handles motifs for aptamers/reporters
+that are internal loops or hairpins (e.g. theophylline and MS2), but
+will not handle multiloops (e.g. tetracycline).
+
+https://www.tbi.univie.ac.at/RNA/download/sourcecode/2_4_x/ViennaRNA-2.4.10.tar.gz
+
+The spp.cpp and dpfe.cpp tools are modeling code that is less accurate for
+the second state pairing probabilities, but are necessary at this point
+to handle aptamers/reporteres with multiloops (e.g. tetracycline). It was
+developed/compiled against a much older version of the ViennaRNA-2.1.19
+libraries.
+
+When compiled, these tools should be copied into the bin/ directory
+where the arcplot web-server can access them. Precompiled binary versions
+have been supplied.
