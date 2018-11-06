@@ -2,7 +2,9 @@ Installation
 
 This repo contains a version of the arcplot 2-state RNA evaluation
 web tool/service for use with a Linux server (Ubuntu/Debian,
-Redhat/Centos). It has been tested with a Google Cloud Ubuntu instance.
+Redhat/Centos). It has been tested as a binary install with a Google
+Cloud Ubuntu 16.04 LTS instance. (To use other versions, you may need
+to recompile the cgi-bin binaries.)
 
 The repo contains compiled versions of the cgi-bin binaries to compute
 the pairing probabilities as well as their source files, but does not
@@ -17,8 +19,8 @@ nodejs and a few other packages in order to run the simple webserver.
 On Ubuntu systems this may look something like:
 
     sudo apt-get install -y git
-    curl -sL https://deb.nodesource.com/setup_11.x | sudo -E bash -
     sudo apt-get install -y build-essential
+    curl -sL https://deb.nodesource.com/setup_11.x | sudo -E bash -
     sudo apt-get install -y nodejs
     sudo npm install md5
 
@@ -59,7 +61,19 @@ more recent ViennaRNA-2.4.10. It handles motifs for aptamers/reporters
 that are internal loops or hairpins (e.g. theophylline and MS2), but
 will not handle multiloops (e.g. tetracycline).
 
-https://www.tbi.univie.ac.at/RNA/download/sourcecode/2_4_x/ViennaRNA-2.4.10.tar.gz
+Here is how to recompile it with ViennaRNA-2.4.10:
+
+    cd ~/arcplot/tools
+    wget https://www.tbi.univie.ac.at/RNA/download/sourcecode/2_4_x/ViennaRNA-2.4.10.tar.gz
+    tar xzf ViennaRNA-2.4.10.tar.gz
+    cp ViennaRNA-2.4.9/examples/cpp.c ViennaRNA-2.4.10/examples/
+    cd ViennaRNA-2.4.10
+    ./configure
+    make
+    sudo make install
+    cd examples
+    gcc -o cpp cpp.c -fopenmp -lRNA -lm
+    cp cpp ~/arcplot/bin/
 
 The spp.cpp and dpfe.cpp tools are modeling code that is less accurate for
 the second state pairing probabilities, but are necessary at this point

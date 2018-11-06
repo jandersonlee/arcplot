@@ -284,7 +284,15 @@ http.createServer(function(request, response) {
   }
 
   var filename = path.join(rootdir, pathname);
-  if (fs.statSync(filename).isDirectory()) filename += '/index.html';
+  fs.exists(filename, function(exists) {
+    if(!exists) {
+      response.writeHead(404, {"Content-Type": "text/plain; charset=us-ascii"});
+      response.write("404 Not Found\n");
+      response.end();
+      return;
+    }
+    if (fs.statSync(filename).isDirectory()) filename += '/index.html';
+  });
   fs.exists(filename, function(exists) {
     if(!exists) {
       response.writeHead(404, {"Content-Type": "text/plain; charset=us-ascii"});
