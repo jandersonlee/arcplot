@@ -292,39 +292,39 @@ http.createServer(function(request, response) {
       return;
     }
     if (fs.statSync(filename).isDirectory()) filename += '/index.html';
-  });
-  fs.exists(filename, function(exists) {
-    if(!exists) {
-      response.writeHead(404, {"Content-Type": "text/plain; charset=us-ascii"});
-      response.write("404 Not Found\n");
-      response.end();
-      return;
-    }
-    fs.readFile(filename, "binary", function(err, file) {
-      if(err) {
-        response.writeHead(500, {"Content-Type": "text/plain; charset=us-ascii"});
-        response.write(err + "\n");
+    fs.exists(filename, function(exists) {
+      if(!exists) {
+        response.writeHead(404, {"Content-Type": "text/plain; charset=us-ascii"});
+        response.write("404 Not Found\n");
         response.end();
         return;
       }
-      var mime_type = "text/plain; charset=us-ascii";
-      if (endsWith(filename,".html")) {
-        mime_type = "text/html; charset=us-ascii";
-      } else if (endsWith(filename,".css")) {
-        mime_type = "text/css";
-      } else if (endsWith(filename,".ico")) {
-        mime_type = "image/x-icon";
-      } else if (endsWith(filename,".js")) {
-        mime_type = "text/javascript";
-      }
-      if (request.headers.cookie) {
-         console.log("cookie=",request.headers.cookie);
-      }
-      console.log("mime_type=",mime_type);
-      response.writeHead(200, {"Content-Type": mime_type,
-                               "Set-Cookie": bakeCookie("foo","bar",1)});
-      response.write(file, "binary");
-      response.end();
+      fs.readFile(filename, "binary", function(err, file) {
+        if(err) {
+          response.writeHead(500, {"Content-Type": "text/plain; charset=us-ascii"});
+          response.write(err + "\n");
+          response.end();
+          return;
+        }
+        var mime_type = "text/plain; charset=us-ascii";
+        if (endsWith(filename,".html")) {
+          mime_type = "text/html; charset=us-ascii";
+        } else if (endsWith(filename,".css")) {
+          mime_type = "text/css";
+        } else if (endsWith(filename,".ico")) {
+          mime_type = "image/x-icon";
+        } else if (endsWith(filename,".js")) {
+          mime_type = "text/javascript";
+        }
+        if (request.headers.cookie) {
+           console.log("cookie=",request.headers.cookie);
+        }
+        console.log("mime_type=",mime_type);
+        response.writeHead(200, {"Content-Type": mime_type,
+                                 "Set-Cookie": bakeCookie("foo","bar",1)});
+        response.write(file, "binary");
+        response.end();
+      });
     });
   });
 }).listen(parseInt(port, 10));
