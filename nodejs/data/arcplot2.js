@@ -1,4 +1,5 @@
 // to minimize global namespace pollution use "ap" or "AP" prefix
+// v1.8: bugfixes
 // v1.7: added / to display of fixed bases
 // v1.6: added 'B' and included metrics and like icon in footnotes
 // v1.5: d1/d2 bugfix plus 'd' 'D' and 'M' commands
@@ -13,7 +14,7 @@
 // v0.6: dependency chain operations
 // v0.5: more Sync and AutoMark fixes
 var apPrefix = "AP";
-var APversion = 1.7;
+var APversion = 1.8;
 function apId(id) { return apPrefix+id; }
 function byId(id) { return document.getElementById(id); }
 function apById(id) { return byId(apId(id)); }
