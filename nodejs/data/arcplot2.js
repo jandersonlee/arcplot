@@ -2580,14 +2580,13 @@ DesignView.prototype.doMutateBases = function (seq,indexes) {
 
 // generate all mutations but only save ones that pair
 DesignView.prototype.doMutatePairs = function (seq,indexes) {
-  this.apc.saveSeq(seq,true);
-  if (indexes.length>0 && indexes.length<=4) {
+  if (indexes.length>0 && indexes.length<=6) {
     var bases = ['A', 'C', 'G', 'U'];
     var x = indexes[0];
     var rest = indexes.slice(1);
     for (var i=0; i<bases.length; i++) {
       var s2 = this.doSeqReplace(seq,bases[i],x);
-      if (apDebug>2) console.log('x='+x+' c='+bases[i]+' s2='+s2);
+      if (apDebug>1) console.log('x='+x+' c='+bases[i]+' s2='+s2);
       if (rest.length>0) this.doMutatePairs(s2,rest);
       else if (this.allPaired(s2)) this.apc.saveSeq(s2,true);
     }
@@ -2632,8 +2631,9 @@ DesignView.prototype.allPaired = function (seq) {
     var key = keys[i];
     var mark = marks[key];
     if (mark.x>0 && mark.y>0 && mark.x!=mark.y) {
-       if (!apPairsWith(seq[mark.x-1],seq[mark.y-1])) return false;
-       //console.log('paired: '+seq[mark.x-1]+mark.x+':'+seq[mark.y-1]+mark.y);
+       var paired = apPairsWith(seq[mark.x-1],seq[mark.y-1]);
+       if (apDebug>1) console.log('paired: '+seq[mark.x-1]+mark.x+':'+seq[mark.y-1]+mark.y+' '+paired);
+       if (!paired) return false;
     }
   }
   return true;
@@ -2691,7 +2691,7 @@ DesignView.prototype.doMutateP = function () {
   if (apDebug>1) console.log('marked: '+bases.join(','));
   var seq = this.model.seq;
   this.apc.saveSeq(seq,true);
-  if (bases.length<=8) return this.doMutatePairs(seq,bases);
+  if (bases.length<=6) return this.doMutatePairs(seq,bases);
   else return this.doMutate();
 }
 
