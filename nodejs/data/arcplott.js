@@ -1,4 +1,5 @@
 // to minimize global namespace pollution use "ap" or "AP" prefix
+// v2.1: hack for T-box aptamer lab
 // v1.8: bugfixes
 // v1.7: added / to display of fixed bases
 // v1.6: added 'B' and included metrics and like icon in footnotes
@@ -14,7 +15,7 @@
 // v0.6: dependency chain operations
 // v0.5: more Sync and AutoMark fixes
 var apPrefix = "AP";
-var APversion = 1.8;
+var APversion = 2.1;
 function apId(id) { return apPrefix+id; }
 function byId(id) { return document.getElementById(id); }
 function apById(id) { return byId(apId(id)); }
@@ -540,7 +541,7 @@ function DotPlotShape(apc, seq, con, plis) {
 
 // add in an unconstrained base state for bonus offset
 DotPlotShape.prototype.aptBonus = function ( dp1, feBonus ) {
-  feBonus = feBonus || -4.00;
+  feBonus = feBonus || -16.34;
   if (apDebug>1) console.log('feBonus='+feBonus);
   var b = apFEToWeight(-feBonus);
   var pp1 = dp1.pprows;
@@ -1191,7 +1192,7 @@ DesignModel.prototype.recompute = function () {
 
 // set the sequence and recompute NS, MFE, DP, etc.
 DesignModel.prototype.setseq = function (seq,bonus) {
-  this.apc.bonus = bonus || Number(this.apc.getval('bonus')||-4.00);
+  this.apc.bonus = bonus || Number(this.apc.getval('bonus')||-16.34);
   if (apDebug>1) console.log('setseq: '+seq+' '+bonus);
   if (seq) {
     this.seq = seq;
@@ -1259,7 +1260,7 @@ DesignView.prototype.asArcplotURL = function (seq) {
   seq = seq || this.seq;
   var auth = this.apc.getval('auth') || 'http://35.185.225.39:8888';
   var pack = [auth,'/arcplot2?seq=',seq];
-  if (this.apc.bonus!=-4.0) pack.push('&bonus='+this.apc.bonus);
+  if (this.apc.bonus!=-16.34) pack.push('&bonus='+this.apc.bonus);
   if (this.style!="arc") pack.push('&style='+this.style);
   if (this.view!="states") pack.push('&view='+this.view);
   return pack.join('');
@@ -1334,7 +1335,7 @@ DesignView.prototype.nextFootnote = function() {
 
 DesignView.prototype.startBonus = function() {
   this.curbonus = 0.0;
-  this.maxbonus = Number(this.apc.getval('bonus')||-4.00);
+  this.maxbonus = Number(this.apc.getval('bonus')||-16.34);
   this.footnotes = [];
   this.bonusflag = true;
   this.footseq = null;
@@ -1983,7 +1984,7 @@ DesignModel.prototype.doMetrics = function () {
     'mfe1': this.me1,
     'mfe2': this.me2,
     'dFE': this.me1-this.me2,
-    'bonus': this.apc.bonus || -4,
+    'bonus': this.apc.bonus || -16.34,
     'same': (this.on ? 1 : 0),
   };
   this.metrics = m;
@@ -3213,7 +3214,7 @@ APState.prototype.pullstates = function(seq,mtf,cb) {
 
 // return the mfe, shape, and pairing probabilities to a callback
 APState.prototype.pull2states = function(seq,con,bonus,cb) {
-  var bonus = this.bonus || -4.0;
+  var bonus = this.bonus || -16.34;
   if (apDebug>1) console.log('pull2states: seq='+seq);
   if (apDebug>1 && con) console.log('pull2states: con='+con);
   if (apDebug>1) console.log('pull2states: bonus='+bonus);
@@ -4010,7 +4011,7 @@ function init() {
   if (apStub) {
     var view = apGetUrlParameter("view") || "states";
     var style = apGetUrlParameter("style") || "arc";
-    var bonus = apGetUrlParameter("bonus") || "-4";
+    var bonus = apGetUrlParameter("bonus") || "-16.34";
     apc.setval("view",view);
     apc.setval("style",style);
     apc.setval("bonus",bonus);
