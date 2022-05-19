@@ -4000,7 +4000,7 @@ function init() {
   apInstalled = true;
   if (apStub) {
     var seq = (apGetUrlParameter("seq") || 
-        "GGGUACAUCGGAGGAUAUCAUGUAAAUACAUGAGGAUCACCCAUGUCGAUGGAGACAUCGGAGGUUGAGAAGGCCGAUGUACCG");
+        "UGGGUGGUAUCGGGAUGAUUAAUCCUCCCAUUGUGUAAAUGAUGGGAGG");
     byId('seq').value = seq;
   }
   // Get things started
