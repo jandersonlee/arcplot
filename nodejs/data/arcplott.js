@@ -1103,7 +1103,7 @@ DesignModel.prototype.findMotif = function (seq,sites,bonus) {
   if (apDebug>1) console.log('findMotif('+seq+')');
   var ss1 = seq.slice(3,12);
   var ss2 = seq.slice(25,27);
-  return ss1+'_'+ss2+',(.......(_)),-16.34';
+  return ss1+'_'+ss2+',(.......(_)),'+bonus;
   for (var n=0; n<sites.length; n++) {
     var s = sites[n];
     if (seq.match(s.S1) && s.S2==undefined) {
